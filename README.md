@@ -159,8 +159,8 @@ This tab now uses a two-step workflow:
 
 CSV columns:
 
-- `SeriesGroup` (required)
-- `RenameAfterCreate` (optional)
+- `SeriesName` (required)
+- `SeriesLabel` (optional)
 - `SeasonNumber` (required, positive integer)
 - `EpisodeNumber` (required, positive integer)
 - `MediaIDs` (required, one or more IDs per cell)
@@ -169,17 +169,17 @@ Recommended format: one row per episode block.
 Use `|` or `;` inside `MediaIDs` to provide multiple Media IDs in one cell.
 
 ```csv
-SeriesGroup,RenameAfterCreate,SeasonNumber,EpisodeNumber,MediaIDs
-group-a,Series A Dashboard,1,1,AbCd1234|XyZ987ab
-group-a,Series A Dashboard,1,3,QwEr4567
-group-b,,1,1,RtYu5678;UiOp7890
+SeriesName,SeriesLabel,SeasonNumber,EpisodeNumber,MediaIDs
+Series A,Series A Dashboard,1,1,AbCd1234|XyZ987ab
+Series A,Series A Dashboard,1,3,QwEr4567
+Series B,,1,1,RtYu5678;UiOp7890
 ```
 
 How it works:
 
-1. Groups rows by `SeriesGroup`.
+1. Groups rows by `SeriesName`.
 2. Creates each series placeholder.
-3. If `RenameAfterCreate` is provided, attempts to rename the created series.
+3. If `SeriesLabel` is provided, attempts to rename the created series.
 4. Creates seasons and episode mappings from the grouped rows.
 
 ---
@@ -252,15 +252,15 @@ Bulk series CSV request payload (after parsing in browser):
   "apiSecret": "your_secret",
   "rows": [
     {
-      "seriesGroup": "group-a",
-      "renameAfterCreate": "Series A Dashboard",
+      "seriesName": "Series A",
+      "seriesLabel": "Series A Dashboard",
       "seasonNumber": 1,
       "episodeNumber": 1,
       "mediaIds": ["AbCd1234", "XyZ987ab"]
     },
     {
-      "seriesGroup": "group-a",
-      "renameAfterCreate": "Series A Dashboard",
+      "seriesName": "Series A",
+      "seriesLabel": "Series A Dashboard",
       "seasonNumber": 1,
       "episodeNumber": 3,
       "mediaIds": ["QwEr4567"]
@@ -281,3 +281,5 @@ Bulk series CSV request payload (after parsing in browser):
   auto-title when required by tenant schema.
 - Series rename updates automatically try multiple PATCH payload variants to
   match tenant schema differences.
+- CSV parser also accepts older aliases (`SeriesGroup`, `RenameAfterCreate`) for
+  backward compatibility.

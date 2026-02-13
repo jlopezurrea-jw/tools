@@ -480,25 +480,30 @@ function parseSeriesBulkCreateCsvRows(csvText) {
   }
 
   const header = rows[0].map((value) => value.trim());
-  const requiredHeaders = [
+  const seriesNameIndex = findCsvHeaderIndexAny(header, [
+    "seriesname",
     "seriesgroup",
-    "seasonnumber",
-    "episodenumber",
-    "mediaids",
-  ];
+  ]);
+  const seasonNumberIndex = findCsvHeaderIndex(header, "seasonnumber");
+  const episodeNumberIndex = findCsvHeaderIndex(header, "episodenumber");
+  const mediaIdsIndex = findCsvHeaderIndexAny(header, ["mediaids", "mediaid"]);
 
-  const headerIndexes = {};
-  for (const requiredHeader of requiredHeaders) {
-    const index = findCsvHeaderIndex(header, requiredHeader);
-    if (index < 0) {
-      throw new Error(
-        `CSV is missing required column '${requiredHeader}'. Required columns: SeriesGroup, SeasonNumber, EpisodeNumber, MediaIDs.`
-      );
-    }
-    headerIndexes[requiredHeader] = index;
+  if (
+    seriesNameIndex < 0 ||
+    seasonNumberIndex < 0 ||
+    episodeNumberIndex < 0 ||
+    mediaIdsIndex < 0
+  ) {
+    throw new Error(
+      "CSV is missing required columns. Required: SeriesName, SeasonNumber, EpisodeNumber, MediaIDs."
+    );
   }
 
-  const renameAfterCreateIndex = findCsvHeaderIndex(header, "renameaftercreate");
+  const renameAfterCreateIndex = findCsvHeaderIndexAny(header, [
+    "serieslabel",
+    "renameto",
+    "renameaftercreate",
+  ]);
   const parsedRows = [];
 
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
@@ -508,10 +513,10 @@ function parseSeriesBulkCreateCsvRows(csvText) {
       continue;
     }
 
-    const seriesGroup = (row[headerIndexes.seriesgroup] || "").trim();
-    const mediaIdsCell = (row[headerIndexes.mediaids] || "").trim();
-    const seasonNumberRaw = (row[headerIndexes.seasonnumber] || "").trim();
-    const episodeNumberRaw = (row[headerIndexes.episodenumber] || "").trim();
+    const seriesGroup = (row[seriesNameIndex] || "").trim();
+    const mediaIdsCell = (row[mediaIdsIndex] || "").trim();
+    const seasonNumberRaw = (row[seasonNumberIndex] || "").trim();
+    const episodeNumberRaw = (row[episodeNumberIndex] || "").trim();
     const renameAfterCreate =
       renameAfterCreateIndex >= 0 ? (row[renameAfterCreateIndex] || "").trim() : "";
 
@@ -519,7 +524,7 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     const episodeNumber = Number(episodeNumberRaw);
 
     if (!seriesGroup) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesGroup.`);
+      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesName.`);
     }
 
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
@@ -542,8 +547,8 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     }
 
     parsedRows.push({
-      seriesGroup,
-      renameAfterCreate,
+      seriesName: seriesGroup,
+      seriesLabel: renameAfterCreate,
       seasonNumber,
       episodeNumber,
       mediaIds,
@@ -581,6 +586,17 @@ function findCsvHeaderIndex(header, expectedName) {
   for (let i = 0; i < header.length; i += 1) {
     if (normalizeCsvHeader(header[i]) === normalizedExpected) {
       return i;
+    }
+  }
+
+  return -1;
+}
+
+function findCsvHeaderIndexAny(header, expectedNames) {
+  for (const expectedName of expectedNames) {
+    const index = findCsvHeaderIndex(header, expectedName);
+    if (index >= 0) {
+      return index;
     }
   }
 

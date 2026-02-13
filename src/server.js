@@ -1033,9 +1033,13 @@ function normalizeSeriesBulkCsvRows(rows) {
 
     const seriesGroup = isNonEmptyString(row.seriesGroup)
       ? row.seriesGroup.trim()
+      : isNonEmptyString(row.seriesName)
+      ? row.seriesName.trim()
       : "";
     const renameAfterCreate = isNonEmptyString(row.renameAfterCreate)
       ? row.renameAfterCreate.trim()
+      : isNonEmptyString(row.seriesLabel)
+      ? row.seriesLabel.trim()
       : "";
     const seasonNumber = toPositiveInteger(row.seasonNumber);
     const episodeNumber = toPositiveInteger(row.episodeNumber);
@@ -1043,7 +1047,7 @@ function normalizeSeriesBulkCsvRows(rows) {
     const mediaIds = [...new Set(rawMediaIds.map(normalizeMediaId).filter(Boolean))];
 
     if (!seriesGroup) {
-      return { error: `rows[${index}].seriesGroup is required.` };
+      return { error: `rows[${index}].seriesGroup or rows[${index}].seriesName is required.` };
     }
 
     if (mediaIds.length === 0) {
