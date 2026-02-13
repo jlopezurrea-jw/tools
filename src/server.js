@@ -257,16 +257,11 @@ app.post("/api/series/create-placeholder", async (req, res) => {
     : isNonEmptyString(seriesTitle)
     ? seriesTitle.trim()
     : "";
-
-  if (!requestedSeriesName) {
-    return res.status(400).json({
-      ok: false,
-      error: "seriesName is required.",
-    });
-  }
+  const placeholderSeriesName =
+    requestedSeriesName || createPlaceholderSeriesName();
 
   try {
-    let metadataUsed = { title: requestedSeriesName };
+    let metadataUsed = { title: placeholderSeriesName };
     let strategy = "metadata.title";
     let createdSeries = await createSeries({
       siteId: siteId.trim(),
@@ -291,7 +286,7 @@ app.post("/api/series/create-placeholder", async (req, res) => {
       ok,
       mode: "series-create-placeholder",
       seriesId: seriesId || null,
-      seriesName: requestedSeriesName,
+      seriesName: placeholderSeriesName,
       strategy,
       series: {
         ok: createdSeries.ok,
@@ -1095,6 +1090,10 @@ function isSeriesTitleSchemaError(jwResponse) {
       description.includes("additional properties are not allowed")
     );
   });
+}
+
+function createPlaceholderSeriesName() {
+  return `Placeholder Series ${new Date().toISOString()}`;
 }
 
 async function jwRequest({ endpoint, method, apiSecret, body }) {

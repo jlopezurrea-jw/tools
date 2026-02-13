@@ -22,7 +22,6 @@ const bulkCsvResponseBox = document.getElementById("bulk-csv-response-box");
 const seriesCreatePlaceholderButton = document.getElementById(
   "series-create-placeholder-btn"
 );
-const seriesCreateTitleInput = document.getElementById("series-create-title");
 const seriesPlaceholderStatusLine = document.getElementById(
   "series-placeholder-status-line"
 );
@@ -199,17 +198,9 @@ function setupSeriesTools() {
   seriesCreatePlaceholderButton.addEventListener("click", async () => {
     try {
       const connection = getConnectionSettings();
-      const seriesName = seriesCreateTitleInput.value.trim();
-      if (!seriesName) {
-        throw new Error("Series name is required before creating a placeholder.");
-      }
-
       await sendRequest({
         url: "/api/series/create-placeholder",
-        payload: {
-          ...connection,
-          seriesName,
-        },
+        payload: connection,
         button: seriesCreatePlaceholderButton,
         defaultButtonText: "Create placeholder series",
         loadingButtonText: "Creating series...",
