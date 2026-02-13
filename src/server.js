@@ -324,41 +324,23 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
     ? seriesTitle.trim()
     : "";
 
-  let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
-
-  if (requestedRename) {
-    try {
-      seriesRenameUpdate = await updateSeriesLabel({
-        siteId: siteId.trim(),
-        apiSecret: apiSecret.trim(),
-        seriesId: seriesId.trim(),
-        renameTo: requestedRename,
-      });
-    } catch (error) {
-      seriesRenameUpdate = {
-        attempted: true,
-        ok: false,
-        strategy: "network_error",
-        jwStatus: 502,
-        endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
-          siteId.trim()
-        )}/series/${encodeURIComponent(seriesId.trim())}/`,
-        request: null,
-        jwResponse: {
-          error:
-            "Unable to reach JW Platform API while updating series label.",
-          details: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  }
-
   const seasonRun = await createSeasonsForSeries({
     siteId: siteId.trim(),
     apiSecret: apiSecret.trim(),
     seriesId: seriesId.trim(),
     seasons: normalizedSeasons,
   });
+  let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
+
+  if (requestedRename) {
+    seriesRenameUpdate = await updateSeriesLabelWithRetry({
+      siteId: siteId.trim(),
+      apiSecret: apiSecret.trim(),
+      seriesId: seriesId.trim(),
+      renameTo: requestedRename,
+    });
+  }
+
   const { results: seasonResults, succeeded, failed } = seasonRun;
   const hasRenameFailure =
     seriesRenameUpdate.attempted && seriesRenameUpdate.ok === false;
@@ -454,48 +436,30 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
       };
     }
 
-    let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
     let seasonRun = {
       total: seriesPlan.seasons.length,
       succeeded: 0,
       failed: seriesPlan.seasons.length,
       results: [],
     };
+    let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
 
     if (placeholderResult.ok && placeholderResult.seriesId) {
-      if (isNonEmptyString(seriesPlan.seriesTitle)) {
-        try {
-          seriesRenameUpdate = await updateSeriesLabel({
-            siteId: siteId.trim(),
-            apiSecret: apiSecret.trim(),
-            seriesId: placeholderResult.seriesId,
-            renameTo: seriesPlan.seriesTitle,
-          });
-        } catch (error) {
-          seriesRenameUpdate = {
-            attempted: true,
-            ok: false,
-            strategy: "network_error",
-            jwStatus: 502,
-            endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
-              siteId.trim()
-            )}/series/${encodeURIComponent(placeholderResult.seriesId)}/`,
-            request: null,
-            jwResponse: {
-              error:
-                "Unable to reach JW Platform API while updating series label.",
-              details: error instanceof Error ? error.message : String(error),
-            },
-          };
-        }
-      }
-
       seasonRun = await createSeasonsForSeries({
         siteId: siteId.trim(),
         apiSecret: apiSecret.trim(),
         seriesId: placeholderResult.seriesId,
         seasons: seriesPlan.seasons,
       });
+
+      if (isNonEmptyString(seriesPlan.seriesTitle)) {
+        seriesRenameUpdate = await updateSeriesLabelWithRetry({
+          siteId: siteId.trim(),
+          apiSecret: apiSecret.trim(),
+          seriesId: placeholderResult.seriesId,
+          renameTo: seriesPlan.seriesTitle,
+        });
+      }
     }
 
     seriesResults.push({
@@ -982,9 +946,25 @@ function normalizeSeasonMediaMappings(seasons) {
       episode_number: entry.episodeNumber,
     }));
 
+    const metadata = { number };
+    if (season.title !== undefined) {
+      if (typeof season.title !== "string") {
+        return { error: `seasons[${seasonIndex}].title must be a string.` };
+      }
+      const seasonTitle = season.title.trim();
+      if (seasonTitle.length > TITLE_LIMIT) {
+        return {
+          error: `seasons[${seasonIndex}].title exceeds ${TITLE_LIMIT} characters.`,
+        };
+      }
+      if (seasonTitle) {
+        metadata.title = seasonTitle;
+      }
+    }
+
     normalizedSeasons.push({
       number,
-      metadata: { number },
+      metadata,
       relationships: { media },
       mediaEntries,
     });
@@ -1085,6 +1065,9 @@ function normalizeSeriesBulkCsvRows(rows) {
     const seriesTitle = isNonEmptyString(row.seriesTitle)
       ? row.seriesTitle.trim()
       : "";
+    const seasonTitle = isNonEmptyString(row.seasonTitle)
+      ? row.seasonTitle.trim()
+      : "";
     const seasonNumber = toPositiveInteger(row.seasonNumber);
     const episodeNumber = toPositiveInteger(row.episodeNumber);
     const rawMediaIds = Array.isArray(row.mediaIds)
@@ -1104,6 +1087,16 @@ function normalizeSeriesBulkCsvRows(rows) {
       };
     }
 
+    if (!seasonTitle) {
+      return { error: `rows[${index}].seasonTitle is required.` };
+    }
+
+    if (seasonTitle.length > TITLE_LIMIT) {
+      return {
+        error: `rows[${index}].seasonTitle exceeds ${TITLE_LIMIT} characters.`,
+      };
+    }
+
     if (mediaIds.length === 0) {
       return { error: `rows[${index}].mediaIds must include at least one MediaID.` };
     }
@@ -1120,6 +1113,7 @@ function normalizeSeriesBulkCsvRows(rows) {
 
     normalizedRows.push({
       seriesTitle,
+      seasonTitle,
       seasonNumber,
       episodeNumber,
       mediaIds,
@@ -1143,10 +1137,22 @@ function buildSeriesBulkPlansFromRows(rows) {
 
     const seriesPlanState = seriesPlansByTitle.get(titleKey);
     if (!seriesPlanState.seasonsByNumber.has(row.seasonNumber)) {
-      seriesPlanState.seasonsByNumber.set(row.seasonNumber, new Map());
+      seriesPlanState.seasonsByNumber.set(row.seasonNumber, {
+        seasonTitle: row.seasonTitle,
+        episodesByNumber: new Map(),
+      });
     }
 
-    const episodesByNumber = seriesPlanState.seasonsByNumber.get(row.seasonNumber);
+    const seasonState = seriesPlanState.seasonsByNumber.get(row.seasonNumber);
+    if (
+      seasonState.seasonTitle.toLowerCase() !== row.seasonTitle.toLowerCase()
+    ) {
+      return {
+        error: `Series "${seriesPlanState.seriesTitle}", season ${row.seasonNumber} has conflicting SeasonTitle values.`,
+      };
+    }
+
+    const episodesByNumber = seasonState.episodesByNumber;
     for (let mediaIndex = 0; mediaIndex < row.mediaIds.length; mediaIndex += 1) {
       const mediaId = row.mediaIds[mediaIndex];
       const episodeNumber = row.episodeNumber + mediaIndex;
@@ -1168,8 +1174,8 @@ function buildSeriesBulkPlansFromRows(rows) {
   const seriesPlans = Array.from(seriesPlansByTitle.values()).map((state) => {
     const seasons = Array.from(state.seasonsByNumber.entries())
       .sort((a, b) => a[0] - b[0])
-      .map(([seasonNumber, episodesByNumber]) => {
-        const mediaEntries = Array.from(episodesByNumber.entries())
+      .map(([seasonNumber, seasonState]) => {
+        const mediaEntries = Array.from(seasonState.episodesByNumber.entries())
           .sort((a, b) => a[0] - b[0])
           .map(([episodeNumber, mediaId]) => ({
             mediaId,
@@ -1178,7 +1184,10 @@ function buildSeriesBulkPlansFromRows(rows) {
 
         return {
           number: seasonNumber,
-          metadata: { number: seasonNumber },
+          metadata: {
+            number: seasonNumber,
+            title: seasonState.seasonTitle,
+          },
           relationships: {
             media: mediaEntries.map((entry) => ({
               id: entry.mediaId,
@@ -1390,12 +1399,20 @@ async function updateSeriesLabel({ siteId, apiSecret, seriesId, renameTo }) {
       body: { metadata: { name: renameTo } },
     },
     {
+      name: "metadata.label",
+      body: { metadata: { label: renameTo } },
+    },
+    {
       name: "title",
       body: { title: renameTo },
     },
     {
       name: "name",
       body: { name: renameTo },
+    },
+    {
+      name: "label",
+      body: { label: renameTo },
     },
   ];
 
@@ -1409,35 +1426,142 @@ async function updateSeriesLabel({ siteId, apiSecret, seriesId, renameTo }) {
     jwResponse: null,
   };
 
-  for (const strategy of strategies) {
-    const result = await jwRequest({
-      endpoint,
-      method: "PATCH",
-      apiSecret,
-      body: strategy.body,
-    });
+  const methods = ["PATCH", "PUT"];
+  for (const method of methods) {
+    for (const strategy of strategies) {
+      const result = await jwRequest({
+        endpoint,
+        method,
+        apiSecret,
+        body: strategy.body,
+      });
 
-    const attemptResult = {
-      attempted: true,
-      ok: result.ok,
-      strategy: strategy.name,
-      jwStatus: result.jwStatus,
-      endpoint,
-      request: strategy.body,
-      jwResponse: result.jwResponse,
-    };
+      const attemptResult = {
+        attempted: true,
+        ok: result.ok,
+        strategy: `${method.toLowerCase()}.${strategy.name}`,
+        jwStatus: result.jwStatus,
+        endpoint,
+        request: strategy.body,
+        jwResponse: result.jwResponse,
+      };
 
-    if (result.ok) {
-      return attemptResult;
-    }
+      if (result.ok) {
+        return attemptResult;
+      }
 
-    lastAttemptResult = attemptResult;
-    if (!isSeriesTitleSchemaError(result.jwResponse)) {
-      return attemptResult;
+      lastAttemptResult = attemptResult;
+
+      if (result.jwStatus === 401 || result.jwStatus === 403) {
+        return attemptResult;
+      }
+
+      const canTryAnotherPayload =
+        result.jwStatus === 400 ||
+        isSeriesTitleSchemaError(result.jwResponse) ||
+        isMethodNotAllowedError(result.jwStatus, result.jwResponse);
+
+      if (!canTryAnotherPayload) {
+        return attemptResult;
+      }
     }
   }
 
   return lastAttemptResult;
+}
+
+async function updateSeriesLabelWithRetry({
+  siteId,
+  apiSecret,
+  seriesId,
+  renameTo,
+}) {
+  const retryDelaysMs = [0, 500, 1000, 2000];
+  let lastAttempt = createDefaultSeriesRenameUpdate();
+
+  for (let attemptIndex = 0; attemptIndex < retryDelaysMs.length; attemptIndex += 1) {
+    if (retryDelaysMs[attemptIndex] > 0) {
+      await waitMs(retryDelaysMs[attemptIndex]);
+    }
+
+    try {
+      const attemptResult = await updateSeriesLabel({
+        siteId,
+        apiSecret,
+        seriesId,
+        renameTo,
+      });
+      lastAttempt = {
+        ...attemptResult,
+        retryAttempt: attemptIndex + 1,
+      };
+
+      if (attemptResult.ok) {
+        return lastAttempt;
+      }
+
+      if (!shouldRetrySeriesRename(attemptResult)) {
+        return lastAttempt;
+      }
+    } catch (error) {
+      lastAttempt = {
+        attempted: true,
+        ok: false,
+        strategy: "network_error",
+        jwStatus: 502,
+        endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+          siteId
+        )}/series/${encodeURIComponent(seriesId)}/`,
+        request: null,
+        jwResponse: {
+          error: "Unable to reach JW Platform API while updating series label.",
+          details: error instanceof Error ? error.message : String(error),
+        },
+        retryAttempt: attemptIndex + 1,
+      };
+    }
+  }
+
+  return lastAttempt;
+}
+
+function shouldRetrySeriesRename(attemptResult) {
+  if (attemptResult === null || typeof attemptResult !== "object") {
+    return false;
+  }
+
+  if (attemptResult.ok) {
+    return false;
+  }
+
+  const status = Number(attemptResult.jwStatus);
+  if (!Number.isFinite(status)) {
+    return true;
+  }
+
+  return status === 404 || status === 409 || status === 429 || status >= 500;
+}
+
+function isMethodNotAllowedError(status, jwResponse) {
+  if (status === 405) {
+    return true;
+  }
+
+  if (jwResponse === null || typeof jwResponse !== "object") {
+    return false;
+  }
+
+  const errors = Array.isArray(jwResponse.errors) ? jwResponse.errors : [];
+  return errors.some((error) => {
+    const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+    return code === "method_not_allowed";
+  });
+}
+
+function waitMs(durationMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function extractResourceId(payload) {

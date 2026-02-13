@@ -303,6 +303,12 @@ function addSeasonEditor(defaultNumber) {
           step="1"
           placeholder="1"
         />
+        <label>Season Title (optional)</label>
+        <input
+          class="season-title-input"
+          type="text"
+          placeholder="Season 1"
+        />
       </div>
       <div class="season-right">
         <label>Media toolbox (MediaID, one per line)</label>
@@ -332,10 +338,15 @@ function addSeasonEditor(defaultNumber) {
 
 function clearSeasonEditor(seasonEditor) {
   const numberInput = seasonEditor.querySelector(".season-number-input");
+  const seasonTitleInput = seasonEditor.querySelector(".season-title-input");
   const mediaInput = seasonEditor.querySelector(".season-media-ids-input");
 
   if (numberInput instanceof HTMLInputElement) {
     numberInput.value = "1";
+  }
+
+  if (seasonTitleInput instanceof HTMLInputElement) {
+    seasonTitleInput.value = "";
   }
 
   if (mediaInput instanceof HTMLTextAreaElement) {
@@ -369,10 +380,15 @@ function collectSeasonMappings() {
 
   return seasonEditors.map((seasonEditor, seasonIndex) => {
     const numberInput = seasonEditor.querySelector(".season-number-input");
+    const seasonTitleInput = seasonEditor.querySelector(".season-title-input");
     const mediaInput = seasonEditor.querySelector(".season-media-ids-input");
 
     if (!(numberInput instanceof HTMLInputElement)) {
       throw new Error(`Season ${seasonIndex + 1} is missing number input.`);
+    }
+
+    if (!(seasonTitleInput instanceof HTMLInputElement)) {
+      throw new Error(`Season ${seasonIndex + 1} is missing title input.`);
     }
 
     if (!(mediaInput instanceof HTMLTextAreaElement)) {
@@ -412,6 +428,7 @@ function collectSeasonMappings() {
 
     return {
       number,
+      title: seasonTitleInput.value.trim(),
       mediaIds,
     };
   });
@@ -484,21 +501,23 @@ function parseSeriesBulkCreateCsvRows(csvText) {
 
   const header = rows[0].map((value) => value.trim());
   if (normalizeCsvHeader(header[0] || "") !== "seriestitle") {
-    throw new Error("First CSV column must be SeriesTitle.");
+    throw new Error("First CSV column must be Series Title.");
   }
 
   const seriesTitleIndex = 0;
+  const seasonTitleIndex = findCsvHeaderIndex(header, "seasontitle");
   const seasonNumberIndex = findCsvHeaderIndex(header, "seasonnumber");
   const episodeNumberIndex = findCsvHeaderIndex(header, "episodenumber");
   const mediaIdsIndex = findCsvHeaderIndexAny(header, ["mediaid", "mediaids"]);
 
   if (
+    seasonTitleIndex < 0 ||
     seasonNumberIndex < 0 ||
     episodeNumberIndex < 0 ||
     mediaIdsIndex < 0
   ) {
     throw new Error(
-      "CSV is missing required columns. Required: SeriesTitle, SeasonNumber, EpisodeNumber, MediaID."
+      "CSV is missing required columns. Required: Series Title, Season Title, Season Number, Episode Number, MediaID."
     );
   }
 
@@ -512,6 +531,7 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     }
 
     const seriesTitle = (row[seriesTitleIndex] || "").trim();
+    const seasonTitle = (row[seasonTitleIndex] || "").trim();
     const mediaIdsCell = (row[mediaIdsIndex] || "").trim();
     const seasonNumberRaw = (row[seasonNumberIndex] || "").trim();
     const episodeNumberRaw = (row[episodeNumberIndex] || "").trim();
@@ -520,18 +540,22 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     const episodeNumber = Number(episodeNumberRaw);
 
     if (!seriesTitle) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesTitle.`);
+      throw new Error(`CSV row ${rowIndex + 1} is missing Series Title.`);
+    }
+
+    if (!seasonTitle) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing Season Title.`);
     }
 
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
       throw new Error(
-        `CSV row ${rowIndex + 1} has invalid SeasonNumber. Use a positive integer.`
+        `CSV row ${rowIndex + 1} has invalid Season Number. Use a positive integer.`
       );
     }
 
     if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) {
       throw new Error(
-        `CSV row ${rowIndex + 1} has invalid EpisodeNumber. Use a positive integer.`
+        `CSV row ${rowIndex + 1} has invalid Episode Number. Use a positive integer.`
       );
     }
 
@@ -544,6 +568,7 @@ function parseSeriesBulkCreateCsvRows(csvText) {
 
     parsedRows.push({
       seriesTitle,
+      seasonTitle,
       seasonNumber,
       episodeNumber,
       mediaIds,

@@ -150,7 +150,7 @@ This tab now uses a two-step workflow:
    - Enter or confirm `SeriesID`
    - Optional: set `Series Title` for the series dashboard label
    - Add season cards with **+ Season**
-   - Left side: season number
+   - Left side: season number and optional season title
    - Right side: Media toolbox using `MediaID` (one per line)
    - Episode numbers are assigned automatically by line order
      (`line 1 = episode 1`, `line 2 = episode 2`, etc.)
@@ -159,26 +159,27 @@ This tab now uses a two-step workflow:
 
 CSV columns:
 
-- `SeriesTitle` (required)
-- `SeasonNumber` (required, positive integer)
-- `EpisodeNumber` (required, positive integer)
+- `Series Title` (required)
+- `Season Title` (required)
+- `Season Number` (required, positive integer)
+- `Episode Number` (required, positive integer)
 - `MediaID` (required)
 
 Recommended format: one row per episode.
 You can still provide multiple Media IDs in one cell with `|` or `;`.
 
 ```csv
-SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
-My Drama Series,1,1,AbCd1234
-My Drama Series,1,2,XyZ987ab
-My Drama Series,2,1,QwEr4567
-Nature Stories,1,1,RtYu5678;UiOp7890
+Series Title,Season Title,Season Number,Episode Number,MediaID
+My Drama Series,Season 1,1,1,AbCd1234
+My Drama Series,Season 1,1,2,XyZ987ab
+My Drama Series,Season 2,2,1,QwEr4567
+Nature Stories,Origins,1,1,RtYu5678;UiOp7890
 ```
 
 How it works:
 
-1. Groups CSV rows by `SeriesTitle`.
-2. Creates a placeholder series per group and renames it to `SeriesTitle`.
+1. Groups CSV rows by `Series Title`.
+2. Creates a placeholder series per group and renames it to `Series Title`.
 3. Creates seasons and episode mappings from each grouped row set.
 
 ---
@@ -237,6 +238,7 @@ Series mapping request payload:
   "seasons": [
     {
       "number": 1,
+      "title": "Season 1",
       "mediaIds": ["AbCd1234", "XyZ987ab"]
     }
   ]
@@ -252,12 +254,14 @@ Bulk series CSV request payload (after parsing in browser):
   "rows": [
     {
       "seriesTitle": "My Drama Series",
+      "seasonTitle": "Season 1",
       "seasonNumber": 1,
       "episodeNumber": 1,
       "mediaIds": ["AbCd1234"]
     },
     {
       "seriesTitle": "My Drama Series",
+      "seasonTitle": "Season 1",
       "seasonNumber": 1,
       "episodeNumber": 2,
       "mediaIds": ["QwEr4567"]
@@ -274,7 +278,7 @@ Bulk series CSV request payload (after parsing in browser):
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
 - Series setup returns a `seriesId` plus per-season creation results.
-- Series flows support series title updates via `seriesTitle` / `SeriesTitle`.
+- Series flows support series title updates via `seriesTitle` (`Series Title` in CSV).
 - Placeholder series creation starts with empty metadata and only falls back to
   auto-title when required by tenant schema.
 - CSV parser also accepts older aliases (`MediaIDs` column name) for
