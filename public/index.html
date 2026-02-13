@@ -247,15 +247,32 @@ XyZ987ab,sales,spring</pre>
         <form id="series-map-form" class="series-step-card" novalidate>
           <h2>Step 2: Map seasons and episodes</h2>
 
-          <div class="field-group">
-            <label for="series-map-series-id">SeriesID</label>
-            <input
-              id="series-map-series-id"
-              name="seriesMapSeriesId"
-              type="text"
-              required
-              placeholder="Paste or use returned SeriesID"
-            />
+          <div class="field-group row-fields">
+            <div>
+              <label for="series-map-series-id">SeriesID</label>
+              <input
+                id="series-map-series-id"
+                name="seriesMapSeriesId"
+                type="text"
+                required
+                placeholder="Paste or use returned SeriesID"
+              />
+            </div>
+            <div>
+              <label for="series-map-series-title"
+                >Series title (set after creation)</label
+              >
+              <input
+                id="series-map-series-title"
+                name="seriesMapSeriesTitle"
+                type="text"
+                placeholder="Series title for dashboard"
+              />
+              <p class="hint">
+                Optional. The tool will try supported title update formats for
+                your tenant before mapping seasons.
+              </p>
+            </div>
           </div>
 
           <div id="series-seasons-container" class="series-seasons-container"></div>

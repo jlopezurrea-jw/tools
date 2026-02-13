@@ -154,6 +154,7 @@ This tab now uses a two-step workflow:
 
 2. **Map seasons and episodes**
    - Enter or confirm `SeriesID`
+   - Optionally enter `Series title` (applied after creation)
    - Add season cards with **+ Season**
    - Left side: season number
    - Right side: MediaIDs toolbox (one MediaID per line)
@@ -228,6 +229,7 @@ Series mapping request payload:
   "siteId": "abc12345",
   "apiSecret": "your_secret",
   "seriesId": "Series12345",
+  "seriesTitle": "My Dashboard Series Title",
   "seasons": [
     {
       "number": 1,
@@ -247,3 +249,5 @@ Series mapping request payload:
 - Series setup returns a `seriesId` plus per-season creation results.
 - If your tenant rejects `metadata.title`, the placeholder creation route
   automatically retries with empty metadata.
+- For Step 2 series title updates, the tool automatically tries multiple
+  PATCH payload variants to match tenant schema differences.

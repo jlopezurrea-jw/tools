@@ -32,6 +32,9 @@ const seriesPlaceholderResponseBox = document.getElementById(
 
 const seriesMapForm = document.getElementById("series-map-form");
 const seriesMapSeriesIdInput = document.getElementById("series-map-series-id");
+const seriesMapSeriesTitleInput = document.getElementById(
+  "series-map-series-title"
+);
 const seriesSeasonsContainer = document.getElementById("series-seasons-container");
 const seriesAddSeasonButton = document.getElementById("series-add-season-btn");
 const seriesMapSubmitButton = document.getElementById("series-map-submit-btn");
@@ -269,6 +272,7 @@ function setupSeriesTools() {
       if (!seriesId) {
         throw new Error("SeriesID is required to map seasons and episodes.");
       }
+      const seriesTitle = seriesMapSeriesTitleInput.value.trim();
 
       const seasons = collectSeasonMappings();
 
@@ -277,6 +281,7 @@ function setupSeriesTools() {
         payload: {
           ...connection,
           seriesId,
+          seriesTitle,
           seasons,
         },
         button: seriesMapSubmitButton,
@@ -284,10 +289,17 @@ function setupSeriesTools() {
         loadingButtonText: "Mapping seasons...",
         statusLine: seriesMapStatusLine,
         responseBox: seriesMapResponseBox,
-        onSuccessMessage: (_response, data) =>
-          `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
+        onSuccessMessage: (_response, data) => {
+          const titleStatus = data?.seriesTitleUpdate?.attempted
+            ? data?.seriesTitleUpdate?.ok
+              ? " Series title updated."
+              : " Series title update failed."
+            : "";
+
+          return `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
             data?.seasons?.total ?? 0
-          } seasons succeeded.`,
+          } seasons succeeded.${titleStatus}`;
+        },
       });
     } catch (error) {
       showFailure(seriesMapStatusLine, seriesMapResponseBox, error);

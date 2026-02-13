@@ -312,7 +312,7 @@ app.post("/api/series/create-placeholder", async (req, res) => {
 });
 
 app.post("/api/series/map-seasons-episodes", async (req, res) => {
-  const { siteId, apiSecret, seriesId, seasons } = req.body || {};
+  const { siteId, apiSecret, seriesId, seriesTitle, seasons } = req.body || {};
 
   const commonError = getSiteAndSecretValidationError(siteId, apiSecret);
   if (commonError) {
@@ -339,6 +339,46 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
 
   const normalizedSeasons = normalizedResult.seasons;
   const seasonResults = [];
+  const normalizedSeriesTitle = isNonEmptyString(seriesTitle)
+    ? seriesTitle.trim()
+    : "";
+
+  let seriesTitleUpdate = {
+    attempted: false,
+    ok: false,
+    strategy: null,
+    jwStatus: null,
+    endpoint: null,
+    request: null,
+    jwResponse: null,
+  };
+
+  if (normalizedSeriesTitle) {
+    try {
+      seriesTitleUpdate = await updateSeriesTitle({
+        siteId: siteId.trim(),
+        apiSecret: apiSecret.trim(),
+        seriesId: seriesId.trim(),
+        seriesTitle: normalizedSeriesTitle,
+      });
+    } catch (error) {
+      seriesTitleUpdate = {
+        attempted: true,
+        ok: false,
+        strategy: "network_error",
+        jwStatus: 502,
+        endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+          siteId.trim()
+        )}/series/${encodeURIComponent(seriesId.trim())}/`,
+        request: null,
+        jwResponse: {
+          error:
+            "Unable to reach JW Platform API while updating series title.",
+          details: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
 
   for (const season of normalizedSeasons) {
     try {
@@ -375,12 +415,15 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
 
   const succeeded = seasonResults.filter((result) => result.ok).length;
   const failed = seasonResults.length - succeeded;
-  const statusCode = failed === 0 ? 201 : 207;
+  const hasTitleFailure =
+    seriesTitleUpdate.attempted && seriesTitleUpdate.ok === false;
+  const statusCode = failed === 0 && !hasTitleFailure ? 201 : 207;
 
   return res.status(statusCode).json({
-    ok: failed === 0,
+    ok: failed === 0 && !hasTitleFailure,
     mode: "series-map-seasons-episodes",
     seriesId: seriesId.trim(),
+    seriesTitleUpdate,
     seasons: {
       total: seasonResults.length,
       succeeded,
@@ -922,6 +965,71 @@ async function createSeason({ siteId, apiSecret, seriesId, season }) {
   });
 }
 
+async function updateSeriesTitle({ siteId, apiSecret, seriesId, seriesTitle }) {
+  const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+    siteId
+  )}/series/${encodeURIComponent(seriesId)}/`;
+
+  const strategies = [
+    {
+      name: "metadata.title",
+      body: { metadata: { title: seriesTitle } },
+    },
+    {
+      name: "metadata.name",
+      body: { metadata: { name: seriesTitle } },
+    },
+    {
+      name: "title",
+      body: { title: seriesTitle },
+    },
+    {
+      name: "name",
+      body: { name: seriesTitle },
+    },
+  ];
+
+  let lastAttemptResult = {
+    attempted: true,
+    ok: false,
+    strategy: null,
+    jwStatus: null,
+    endpoint,
+    request: null,
+    jwResponse: null,
+  };
+
+  for (const strategy of strategies) {
+    const result = await jwRequest({
+      endpoint,
+      method: "PATCH",
+      apiSecret,
+      body: strategy.body,
+    });
+
+    const attemptResult = {
+      attempted: true,
+      ok: result.ok,
+      strategy: strategy.name,
+      jwStatus: result.jwStatus,
+      endpoint,
+      request: strategy.body,
+      jwResponse: result.jwResponse,
+    };
+
+    if (result.ok) {
+      return attemptResult;
+    }
+
+    lastAttemptResult = attemptResult;
+    if (!isSeriesTitleSchemaError(result.jwResponse)) {
+      return attemptResult;
+    }
+  }
+
+  return lastAttemptResult;
+}
+
 function extractResourceId(payload) {
   if (payload === null || payload === undefined) {
     return null;
@@ -960,6 +1068,31 @@ function hasTitleUnexpectedError(jwResponse) {
       code === "invalid_body" &&
       description.includes("title") &&
       description.includes("unexpected")
+    );
+  });
+}
+
+function isSeriesTitleSchemaError(jwResponse) {
+  if (jwResponse === null || typeof jwResponse !== "object") {
+    return false;
+  }
+
+  const errors = Array.isArray(jwResponse.errors) ? jwResponse.errors : [];
+  return errors.some((error) => {
+    const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+    const description =
+      typeof error?.description === "string"
+        ? error.description.toLowerCase()
+        : "";
+
+    if (code !== "invalid_body") {
+      return false;
+    }
+
+    return (
+      (description.includes("title") && description.includes("unexpected")) ||
+      (description.includes("name") && description.includes("unexpected")) ||
+      description.includes("additional properties are not allowed")
     );
   });
 }
