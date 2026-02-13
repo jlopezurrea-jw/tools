@@ -217,14 +217,18 @@ XyZ987ab,sales,spring</pre>
             <strong>SeriesID</strong> will be returned and auto-filled below.
           </p>
           <div class="field-group">
-            <label for="series-create-title">Series title</label>
+            <label for="series-create-title">Series name (label)</label>
             <input
               id="series-create-title"
               name="seriesCreateTitle"
               type="text"
               required
-              placeholder="My New Series"
+              placeholder="My Series Label"
             />
+            <p class="hint">
+              This label is used to create the series when supported by your
+              tenant configuration.
+            </p>
           </div>
           <button
             type="button"

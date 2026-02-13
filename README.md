@@ -147,9 +147,9 @@ QwEr4567,finance,q1,team-b
 This tab now uses a two-step workflow:
 
 1. **Create placeholder series**
-   - Enter a **Series title** in the textbox
+   - Enter a **Series name** in the textbox
    - Click **Create placeholder series**
-   - Tool creates a new series using that title
+   - Tool creates a new series using that value where supported
    - Returned `SeriesID` is displayed and auto-filled into Step 2
 
 2. **Map seasons and episodes**
@@ -217,7 +217,7 @@ Series placeholder request payload:
 {
   "siteId": "abc12345",
   "apiSecret": "your_secret",
-  "seriesTitle": "My New Series"
+  "seriesName": "My New Series"
 }
 ```
 
@@ -245,3 +245,5 @@ Series mapping request payload:
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
 - Series setup returns a `seriesId` plus per-season creation results.
+- If your tenant rejects `metadata.title`, the placeholder creation route
+  automatically retries with empty metadata.

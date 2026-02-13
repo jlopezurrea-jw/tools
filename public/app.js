@@ -196,16 +196,16 @@ function setupSeriesTools() {
   seriesCreatePlaceholderButton.addEventListener("click", async () => {
     try {
       const connection = getConnectionSettings();
-      const seriesTitle = seriesCreateTitleInput.value.trim();
-      if (!seriesTitle) {
-        throw new Error("Series title is required before creating a placeholder.");
+      const seriesName = seriesCreateTitleInput.value.trim();
+      if (!seriesName) {
+        throw new Error("Series name is required before creating a placeholder.");
       }
 
       await sendRequest({
         url: "/api/series/create-placeholder",
         payload: {
           ...connection,
-          seriesTitle,
+          seriesName,
         },
         button: seriesCreatePlaceholderButton,
         defaultButtonText: "Create placeholder series",
@@ -214,8 +214,12 @@ function setupSeriesTools() {
         responseBox: seriesPlaceholderResponseBox,
         onSuccessMessage: (_response, data) => {
           const seriesId = data?.seriesId || "";
+          const strategy = data?.strategy || "";
           if (seriesId) {
             seriesMapSeriesIdInput.value = seriesId;
+            if (strategy === "metadata.empty") {
+              return `Placeholder series created. SeriesID: ${seriesId} (created without metadata.title).`;
+            }
             return `Placeholder series created. SeriesID: ${seriesId}`;
           }
 

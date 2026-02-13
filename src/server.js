@@ -242,7 +242,7 @@ app.post("/api/media/bulk-custom-csv", async (req, res) => {
 });
 
 app.post("/api/series/create-placeholder", async (req, res) => {
-  const { siteId, apiSecret, seriesTitle } = req.body || {};
+  const { siteId, apiSecret, seriesName, seriesTitle } = req.body || {};
 
   const commonError = getSiteAndSecretValidationError(siteId, apiSecret);
   if (commonError) {
@@ -252,21 +252,38 @@ app.post("/api/series/create-placeholder", async (req, res) => {
     });
   }
 
-  if (!isNonEmptyString(seriesTitle)) {
+  const requestedSeriesName = isNonEmptyString(seriesName)
+    ? seriesName.trim()
+    : isNonEmptyString(seriesTitle)
+    ? seriesTitle.trim()
+    : "";
+
+  if (!requestedSeriesName) {
     return res.status(400).json({
       ok: false,
-      error: "seriesTitle is required.",
+      error: "seriesName is required.",
     });
   }
 
-  const normalizedSeriesTitle = seriesTitle.trim();
-
   try {
-    const createdSeries = await createSeries({
+    let metadataUsed = { title: requestedSeriesName };
+    let strategy = "metadata.title";
+    let createdSeries = await createSeries({
       siteId: siteId.trim(),
       apiSecret: apiSecret.trim(),
-      metadata: { title: normalizedSeriesTitle },
+      metadata: metadataUsed,
     });
+
+    // Some tenants reject metadata.title with "title was unexpected".
+    if (!createdSeries.ok && hasTitleUnexpectedError(createdSeries.jwResponse)) {
+      metadataUsed = {};
+      strategy = "metadata.empty";
+      createdSeries = await createSeries({
+        siteId: siteId.trim(),
+        apiSecret: apiSecret.trim(),
+        metadata: metadataUsed,
+      });
+    }
 
     const seriesId = extractResourceId(createdSeries.jwResponse);
     const ok = createdSeries.ok && isNonEmptyString(seriesId);
@@ -274,12 +291,13 @@ app.post("/api/series/create-placeholder", async (req, res) => {
       ok,
       mode: "series-create-placeholder",
       seriesId: seriesId || null,
-      title: normalizedSeriesTitle,
+      seriesName: requestedSeriesName,
+      strategy,
       series: {
         ok: createdSeries.ok,
         jwStatus: createdSeries.jwStatus,
         endpoint: createdSeries.endpoint,
-        request: { metadata: { title: normalizedSeriesTitle } },
+        request: { metadata: metadataUsed },
         jwResponse: createdSeries.jwResponse,
       },
     });
@@ -923,6 +941,27 @@ function toPositiveInteger(value) {
   }
 
   return parsed;
+}
+
+function hasTitleUnexpectedError(jwResponse) {
+  if (jwResponse === null || typeof jwResponse !== "object") {
+    return false;
+  }
+
+  const errors = Array.isArray(jwResponse.errors) ? jwResponse.errors : [];
+  return errors.some((error) => {
+    const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+    const description =
+      typeof error?.description === "string"
+        ? error.description.toLowerCase()
+        : "";
+
+    return (
+      code === "invalid_body" &&
+      description.includes("title") &&
+      description.includes("unexpected")
+    );
+  });
 }
 
 async function jwRequest({ endpoint, method, apiSecret, body }) {
