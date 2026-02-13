@@ -1,40 +1,41 @@
 # JWX Internal Metadata Updater
 
-Simple internal web tool for updating media metadata on a JWX property through
-the JW Platform Management API.
+Simple internal web tool for updating media metadata on a JWX property through the
+JW Platform Management API.
 
-This tool updates:
+The app uses:
 
-- `title`
-- `description`
-- `custom_params` (key/value strings)
-
-using the endpoint documented in the API reference:
-
-- `PATCH https://api.jwplayer.com/v2/sites/{site_id}/media/{media_id}/`
-
-and `Authorization: Bearer {api_secret}`.
+- Endpoint: `PATCH https://api.jwplayer.com/v2/sites/{site_id}/media/{media_id}/`
+- Auth header: `Authorization: Bearer {api_secret}`
 
 ---
 
-## What this app does
+## Features
 
-1. Serves a small internal UI.
-2. Collects:
-   - Property ID (`site_id`)
-   - Media ID (`media_id`)
-   - Optional title
-   - Optional description
-   - Optional custom params
-3. Sends the update through a backend endpoint so your API secret is never
-   exposed to the browser.
+The UI has three tabs:
+
+1. **Single update**
+   - Input: Property ID, API Secret, Media ID
+   - Optional updates: `title`, `description`, `custom_params`
+
+2. **Bulk custom params (lines)**
+   - Input: Property ID, API Secret
+   - Input multiple Media IDs (one per line)
+   - Applies one shared custom-parameter set to all listed Media IDs
+
+3. **Bulk custom params (CSV)**
+   - Input: Property ID, API Secret
+   - Upload CSV where:
+     - first column header is `MediaID`
+     - remaining column headers are custom-parameter keys
+     - each row updates one media item with row-specific custom-parameter values
 
 ---
 
 ## Prerequisites
 
 - Node.js 20+ (Node 22 works)
-- A JWX Management API secret for the property you want to edit
+- A JWX Management API secret for the property you want to edit (entered in the UI)
 
 ---
 
@@ -57,18 +58,19 @@ Keep this secret private.
 npm install
 ```
 
-### 3) Configure environment variables
+### 3) Configure environment variables (optional)
 
-Create a `.env` file from `.env.example`:
+Only `PORT` is used by default.
+
+Create a `.env` file from `.env.example` if you want a custom port:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Example:
 
 ```env
-JWP_API_SECRET=your_real_management_api_secret
 PORT=3000
 ```
 
@@ -84,20 +86,32 @@ The server starts at:
 
 ### 5) Use the UI
 
-1. Enter **Property ID** (`site_id`).
-2. Enter **Media ID** (`media_id`).
-3. Add any metadata fields you want to update:
-   - title
-   - description
-   - custom params (`key=value`, one per line)
-4. Click **Update metadata**.
-5. Review the result panel for HTTP status and API response body.
+1. Enter **Property ID** (`site_id`) at the top.
+2. Enter **API Secret** at the top.
+3. Choose a tab and submit your update request.
+4. Review the result panel for status and per-item responses.
 
 ---
 
-## Custom parameter format
+## Tab details
 
-Use one key/value pair per line:
+### Single update tab
+
+- Supports metadata update for one Media ID.
+- Includes `title`, `description`, and `custom_params`.
+- If you provide only one field, only that field is sent.
+
+### Bulk custom params (lines) tab
+
+Media IDs input example:
+
+```text
+AbCd1234
+XyZ987ab
+QwEr4567
+```
+
+Custom params input example:
 
 ```text
 department=marketing
@@ -105,31 +119,78 @@ campaign=internal_q1
 owner=content-ops
 ```
 
+All listed Media IDs receive the same `custom_params` payload.
+
+### Bulk custom params (CSV) tab
+
+CSV example:
+
+```csv
+MediaID,department,campaign,owner
+AbCd1234,marketing,winter,content-ops
+XyZ987ab,sales,spring,news-team
+QwEr4567,finance,q1,team-b
+```
+
+- `MediaID` is required in each row.
+- Empty custom-parameter cells are ignored.
+- Rows without custom-parameter values are skipped.
+
 ---
 
-## API payload sent by this tool
+## Payload examples
 
-The backend sends:
+Single update request payload:
 
 ```json
 {
-  "metadata": {
-    "title": "New title",
-    "description": "New description",
-    "custom_params": {
-      "department": "marketing"
-    }
+  "siteId": "abc12345",
+  "apiSecret": "your_secret",
+  "mediaId": "AbCd1234",
+  "title": "New title",
+  "description": "New description",
+  "customParams": {
+    "department": "marketing"
   }
 }
 ```
 
-Only fields you provide are included.
+Bulk lines request payload:
+
+```json
+{
+  "siteId": "abc12345",
+  "apiSecret": "your_secret",
+  "mediaIds": ["AbCd1234", "XyZ987ab"],
+  "customParams": {
+    "department": "marketing",
+    "campaign": "winter"
+  }
+}
+```
+
+Bulk CSV request payload (after parsing in browser):
+
+```json
+{
+  "siteId": "abc12345",
+  "apiSecret": "your_secret",
+  "updates": [
+    {
+      "mediaId": "AbCd1234",
+      "customParams": {
+        "department": "marketing",
+        "campaign": "winter"
+      }
+    }
+  ]
+}
+```
 
 ---
 
 ## Notes
 
-- The backend validates required IDs and metadata limits before calling JWX.
-- If no metadata fields are provided, the request is rejected.
-- If the API secret is missing, the tool returns a server-side configuration
-  error.
+- The backend validates required IDs and metadata limits before calling JW APIs.
+- Bulk endpoints accept up to 300 items per request.
+- API responses include per-item status/results for bulk operations.
