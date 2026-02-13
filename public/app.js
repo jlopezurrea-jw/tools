@@ -37,9 +37,6 @@ const seriesPlaceholderResponseBox = document.getElementById(
 
 const seriesMapForm = document.getElementById("series-map-form");
 const seriesMapSeriesIdInput = document.getElementById("series-map-series-id");
-const seriesMapRenameLabelInput = document.getElementById(
-  "series-map-rename-label"
-);
 const seriesSeasonsContainer = document.getElementById("series-seasons-container");
 const seriesAddSeasonButton = document.getElementById("series-add-season-btn");
 const seriesMapSubmitButton = document.getElementById("series-map-submit-btn");
@@ -258,7 +255,6 @@ function setupSeriesTools() {
       if (!seriesId) {
         throw new Error("SeriesID is required to map seasons and episodes.");
       }
-      const renameTo = seriesMapRenameLabelInput.value.trim();
 
       const seasons = collectSeasonMappings();
 
@@ -267,7 +263,6 @@ function setupSeriesTools() {
         payload: {
           ...connection,
           seriesId,
-          renameTo,
           seasons,
         },
         button: seriesMapSubmitButton,
@@ -275,17 +270,10 @@ function setupSeriesTools() {
         loadingButtonText: "Mapping seasons...",
         statusLine: seriesMapStatusLine,
         responseBox: seriesMapResponseBox,
-        onSuccessMessage: (_response, data) => {
-          const renameStatus = data?.seriesRenameUpdate?.attempted
-            ? data?.seriesRenameUpdate?.ok
-              ? " Series label updated."
-              : " Series label update failed."
-            : "";
-
-          return `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
+        onSuccessMessage: (_response, data) =>
+          `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
             data?.seasons?.total ?? 0
-          } seasons succeeded.${renameStatus}`;
-        },
+          } seasons succeeded.`,
       });
     } catch (error) {
       showFailure(seriesMapStatusLine, seriesMapResponseBox, error);
@@ -309,14 +297,14 @@ function addSeasonEditor(defaultNumber) {
         />
       </div>
       <div class="season-right">
-        <label>MediaIDs toolbox (one per line)</label>
+        <label>Media toolbox (MediaID|MediaTitle, one per line)</label>
         <textarea
           class="season-media-ids-input"
           rows="7"
-          placeholder="AbCd1234&#10;XyZ987ab&#10;QwEr4567"
+          placeholder="AbCd1234|Episode Title 1&#10;XyZ987ab|Episode Title 2&#10;QwEr4567|Episode Title 3"
         ></textarea>
         <p class="hint">
-          Episode numbers are assigned by order: first line = episode 1, second line = episode 2, etc.
+          Use <code>MediaID|MediaTitle</code>. Episode numbers are assigned by line order.
         </p>
       </div>
     </div>
@@ -392,24 +380,38 @@ function collectSeasonMappings() {
     }
     seenSeasonNumbers.add(number);
 
-    const mediaIds = [
-      ...new Set(
-        mediaInput.value
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-      ),
-    ];
+    const lines = mediaInput.value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-    if (mediaIds.length === 0) {
+    if (lines.length === 0) {
       throw new Error(
         `Season ${seasonIndex + 1} must include at least one MediaID.`
       );
     }
 
+    const mediaEntries = lines.map((line, lineIndex) => {
+      const separatorIndex = line.indexOf("|");
+      const mediaId =
+        separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : line.trim();
+      const mediaTitle =
+        separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : "";
+
+      if (!mediaId) {
+        throw new Error(
+          `Season ${seasonIndex + 1}, line ${
+            lineIndex + 1
+          } is missing MediaID. Use MediaID|MediaTitle.`
+        );
+      }
+
+      return { mediaId, mediaTitle };
+    });
+
     return {
       number,
-      mediaIds,
+      mediaEntries,
     };
   });
 }
@@ -480,30 +482,22 @@ function parseSeriesBulkCreateCsvRows(csvText) {
   }
 
   const header = rows[0].map((value) => value.trim());
-  const seriesNameIndex = findCsvHeaderIndexAny(header, [
-    "seriesname",
-    "seriesgroup",
-  ]);
+  const mediaTitleIndex = findCsvHeaderIndex(header, "mediatitle");
   const seasonNumberIndex = findCsvHeaderIndex(header, "seasonnumber");
   const episodeNumberIndex = findCsvHeaderIndex(header, "episodenumber");
-  const mediaIdsIndex = findCsvHeaderIndexAny(header, ["mediaids", "mediaid"]);
+  const mediaIdsIndex = findCsvHeaderIndexAny(header, ["mediaid", "mediaids"]);
 
   if (
-    seriesNameIndex < 0 ||
+    mediaTitleIndex < 0 ||
     seasonNumberIndex < 0 ||
     episodeNumberIndex < 0 ||
     mediaIdsIndex < 0
   ) {
     throw new Error(
-      "CSV is missing required columns. Required: SeriesName, SeasonNumber, EpisodeNumber, MediaIDs."
+      "CSV is missing required columns. Required: MediaTitle, SeasonNumber, EpisodeNumber, MediaID."
     );
   }
 
-  const renameAfterCreateIndex = findCsvHeaderIndexAny(header, [
-    "serieslabel",
-    "renameto",
-    "renameaftercreate",
-  ]);
   const parsedRows = [];
 
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
@@ -513,18 +507,16 @@ function parseSeriesBulkCreateCsvRows(csvText) {
       continue;
     }
 
-    const seriesGroup = (row[seriesNameIndex] || "").trim();
+    const mediaTitle = (row[mediaTitleIndex] || "").trim();
     const mediaIdsCell = (row[mediaIdsIndex] || "").trim();
     const seasonNumberRaw = (row[seasonNumberIndex] || "").trim();
     const episodeNumberRaw = (row[episodeNumberIndex] || "").trim();
-    const renameAfterCreate =
-      renameAfterCreateIndex >= 0 ? (row[renameAfterCreateIndex] || "").trim() : "";
 
     const seasonNumber = Number(seasonNumberRaw);
     const episodeNumber = Number(episodeNumberRaw);
 
-    if (!seriesGroup) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesName.`);
+    if (!mediaTitle) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing MediaTitle.`);
     }
 
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
@@ -542,13 +534,12 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     const mediaIds = splitMediaIdsCell(mediaIdsCell);
     if (mediaIds.length === 0) {
       throw new Error(
-        `CSV row ${rowIndex + 1} is missing MediaIDs. Add one or more IDs separated by | or ;`
+        `CSV row ${rowIndex + 1} is missing MediaID. Add one or more IDs separated by | or ;`
       );
     }
 
     parsedRows.push({
-      seriesName: seriesGroup,
-      seriesLabel: renameAfterCreate,
+      mediaTitle,
       seasonNumber,
       episodeNumber,
       mediaIds,

@@ -148,10 +148,9 @@ This tab now uses a two-step workflow:
 
 2. **Map seasons and episodes**
    - Enter or confirm `SeriesID`
-   - Optionally enter `Rename label` (applied after creation)
    - Add season cards with **+ Season**
    - Left side: season number
-   - Right side: MediaIDs toolbox (one MediaID per line)
+   - Right side: Media toolbox using `MediaID|MediaTitle`
    - Episode numbers are assigned automatically by line order
      (`line 1 = episode 1`, `line 2 = episode 2`, etc.)
 
@@ -159,28 +158,27 @@ This tab now uses a two-step workflow:
 
 CSV columns:
 
-- `SeriesName` (required)
-- `SeriesLabel` (optional)
+- `MediaTitle` (required)
 - `SeasonNumber` (required, positive integer)
 - `EpisodeNumber` (required, positive integer)
-- `MediaIDs` (required, one or more IDs per cell)
+- `MediaID` (required)
 
-Recommended format: one row per episode block.
-Use `|` or `;` inside `MediaIDs` to provide multiple Media IDs in one cell.
+Recommended format: one row per episode.
+You can still provide multiple Media IDs in one cell with `|` or `;`.
 
 ```csv
-SeriesName,SeriesLabel,SeasonNumber,EpisodeNumber,MediaIDs
-Series A,Series A Dashboard,1,1,AbCd1234|XyZ987ab
-Series A,Series A Dashboard,1,3,QwEr4567
-Series B,,1,1,RtYu5678;UiOp7890
+MediaTitle,SeasonNumber,EpisodeNumber,MediaID
+Episode Title A,1,1,AbCd1234
+Episode Title B,1,2,XyZ987ab
+Episode Title C,2,1,QwEr4567
+Episode Title D,2,2,RtYu5678;UiOp7890
 ```
 
 How it works:
 
-1. Groups rows by `SeriesName`.
-2. Creates each series placeholder.
-3. If `SeriesLabel` is provided, attempts to rename the created series.
-4. Creates seasons and episode mappings from the grouped rows.
+1. Creates one placeholder series for the upload.
+2. Applies media titles to each referenced media item.
+3. Creates seasons and episode mappings from CSV rows.
 
 ---
 
@@ -234,11 +232,13 @@ Series mapping request payload:
   "siteId": "abc12345",
   "apiSecret": "your_secret",
   "seriesId": "Series12345",
-  "renameTo": "My Dashboard Series Label",
   "seasons": [
     {
       "number": 1,
-      "mediaIds": ["AbCd1234", "XyZ987ab", "QwEr4567"]
+      "mediaEntries": [
+        { "mediaId": "AbCd1234", "mediaTitle": "Episode Title 1" },
+        { "mediaId": "XyZ987ab", "mediaTitle": "Episode Title 2" }
+      ]
     }
   ]
 }
@@ -252,17 +252,15 @@ Bulk series CSV request payload (after parsing in browser):
   "apiSecret": "your_secret",
   "rows": [
     {
-      "seriesName": "Series A",
-      "seriesLabel": "Series A Dashboard",
+      "mediaTitle": "Episode Title A",
       "seasonNumber": 1,
       "episodeNumber": 1,
-      "mediaIds": ["AbCd1234", "XyZ987ab"]
+      "mediaIds": ["AbCd1234"]
     },
     {
-      "seriesName": "Series A",
-      "seriesLabel": "Series A Dashboard",
+      "mediaTitle": "Episode Title B",
       "seasonNumber": 1,
-      "episodeNumber": 3,
+      "episodeNumber": 2,
       "mediaIds": ["QwEr4567"]
     }
   ]
@@ -277,9 +275,8 @@ Bulk series CSV request payload (after parsing in browser):
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
 - Series setup returns a `seriesId` plus per-season creation results.
+- Series flows support media title updates (`MediaTitle`) while creating season mappings.
 - Placeholder series creation starts with empty metadata and only falls back to
   auto-title when required by tenant schema.
-- Series rename updates automatically try multiple PATCH payload variants to
-  match tenant schema differences.
-- CSV parser also accepts older aliases (`SeriesGroup`, `RenameAfterCreate`) for
+- CSV parser also accepts older aliases (`MediaIDs` column name) for
   backward compatibility.

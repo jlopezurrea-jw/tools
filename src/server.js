@@ -426,122 +426,66 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
     });
   }
 
-  const seriesPlans = plansResult.seriesPlans;
+  const seriesPlan = plansResult.seriesPlan;
   const seriesResults = [];
 
-  for (const plan of seriesPlans) {
-    let placeholderResult;
-    try {
-      placeholderResult = await createPlaceholderSeriesResource({
-        siteId: siteId.trim(),
-        apiSecret: apiSecret.trim(),
-        placeholderLabel: plan.seriesGroup,
-      });
-    } catch (error) {
-      seriesResults.push({
-        seriesGroup: plan.seriesGroup,
-        renameAfterCreate: plan.renameAfterCreate || null,
-        series: {
-          ok: false,
-          jwStatus: 502,
-          endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
-            siteId.trim()
-          )}/series/`,
-          request: null,
-          jwResponse: {
-            error:
-              "Unable to reach JW Platform API while creating series placeholder.",
-            details: error instanceof Error ? error.message : String(error),
-          },
-        },
-        seriesRenameUpdate: createDefaultSeriesRenameUpdate(),
-        seasons: {
-          total: plan.seasons.length,
-          succeeded: 0,
-          failed: plan.seasons.length,
-          results: [],
-        },
-      });
-      continue;
-    }
+  let placeholderResult;
+  try {
+    placeholderResult = await createPlaceholderSeriesResource({
+      siteId: siteId.trim(),
+      apiSecret: apiSecret.trim(),
+      placeholderLabel: createPlaceholderSeriesName(),
+    });
+  } catch (error) {
+    placeholderResult = {
+      ok: false,
+      jwStatus: 502,
+      endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+        siteId.trim()
+      )}/series/`,
+      request: null,
+      jwResponse: {
+        error: "Unable to reach JW Platform API while creating series placeholder.",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      strategy: "network_error",
+      seriesId: null,
+      placeholderLabel: null,
+    };
+  }
 
-    if (!placeholderResult.ok || !placeholderResult.seriesId) {
-      seriesResults.push({
-        seriesGroup: plan.seriesGroup,
-        renameAfterCreate: plan.renameAfterCreate || null,
-        series: {
-          ok: placeholderResult.ok,
-          jwStatus: placeholderResult.jwStatus,
-          endpoint: placeholderResult.endpoint,
-          request: placeholderResult.request,
-          jwResponse: placeholderResult.jwResponse,
-          strategy: placeholderResult.strategy,
-          seriesId: placeholderResult.seriesId,
-        },
-        seriesRenameUpdate: createDefaultSeriesRenameUpdate(),
-        seasons: {
-          total: plan.seasons.length,
-          succeeded: 0,
-          failed: plan.seasons.length,
-          results: [],
-        },
-      });
-      continue;
-    }
+  let seasonRun = {
+    total: seriesPlan.seasons.length,
+    succeeded: 0,
+    failed: seriesPlan.seasons.length,
+    results: [],
+  };
 
-    let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
-    if (plan.renameAfterCreate) {
-      try {
-        seriesRenameUpdate = await updateSeriesLabel({
-          siteId: siteId.trim(),
-          apiSecret: apiSecret.trim(),
-          seriesId: placeholderResult.seriesId,
-          renameTo: plan.renameAfterCreate,
-        });
-      } catch (error) {
-        seriesRenameUpdate = {
-          attempted: true,
-          ok: false,
-          strategy: "network_error",
-          jwStatus: 502,
-          endpoint: `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
-            siteId.trim()
-          )}/series/${encodeURIComponent(placeholderResult.seriesId)}/`,
-          request: null,
-          jwResponse: {
-            error:
-              "Unable to reach JW Platform API while updating series label.",
-            details: error instanceof Error ? error.message : String(error),
-          },
-        };
-      }
-    }
-
-    const seasonRun = await createSeasonsForSeries({
+  if (placeholderResult.ok && placeholderResult.seriesId) {
+    seasonRun = await createSeasonsForSeries({
       siteId: siteId.trim(),
       apiSecret: apiSecret.trim(),
       seriesId: placeholderResult.seriesId,
-      seasons: plan.seasons,
-    });
-
-    seriesResults.push({
-      seriesGroup: plan.seriesGroup,
-      renameAfterCreate: plan.renameAfterCreate || null,
-      series: {
-        ok: placeholderResult.ok,
-        jwStatus: placeholderResult.jwStatus,
-        endpoint: placeholderResult.endpoint,
-        request: placeholderResult.request,
-        jwResponse: placeholderResult.jwResponse,
-        strategy: placeholderResult.strategy,
-        seriesId: placeholderResult.seriesId,
-      },
-      seriesRenameUpdate,
-      seasons: seasonRun,
+      seasons: seriesPlan.seasons,
     });
   }
 
-  const totalSeries = seriesResults.length;
+  seriesResults.push({
+    series: {
+      ok: placeholderResult.ok,
+      jwStatus: placeholderResult.jwStatus,
+      endpoint: placeholderResult.endpoint,
+      request: placeholderResult.request,
+      jwResponse: placeholderResult.jwResponse,
+      strategy: placeholderResult.strategy,
+      seriesId: placeholderResult.seriesId,
+      placeholderLabel: placeholderResult.placeholderLabel,
+    },
+    seriesRenameUpdate: createDefaultSeriesRenameUpdate(),
+    seasons: seasonRun,
+  });
+
+  const totalSeries = 1;
   const seriesCreated = seriesResults.filter((result) => result.series.ok).length;
   const totalSeasons = seriesResults.reduce(
     (sum, result) => sum + result.seasons.total,
@@ -992,34 +936,124 @@ function normalizeSeasonMediaMappings(seasons) {
     }
     seenSeasonNumbers.add(number);
 
-    if (!Array.isArray(season.mediaIds) || season.mediaIds.length === 0) {
-      return {
-        error: `seasons[${seasonIndex}].mediaIds must be a non-empty array.`,
-      };
+    const mediaEntriesResult = normalizeSeasonMediaEntries(
+      season,
+      seasonIndex
+    );
+    if (mediaEntriesResult.error) {
+      return { error: mediaEntriesResult.error };
     }
+    const mediaEntries = mediaEntriesResult.mediaEntries;
 
-    const normalizedMediaIds = [
-      ...new Set(season.mediaIds.map(normalizeMediaId).filter(Boolean)),
-    ];
-    if (normalizedMediaIds.length === 0) {
-      return {
-        error: `seasons[${seasonIndex}].mediaIds must include at least one valid Media ID.`,
-      };
-    }
-
-    const media = normalizedMediaIds.map((mediaId, mediaIndex) => ({
-      id: mediaId,
-      episode_number: mediaIndex + 1,
+    const media = mediaEntries.map((entry) => ({
+      id: entry.mediaId,
+      episode_number: entry.episodeNumber,
     }));
 
     normalizedSeasons.push({
       number,
       metadata: { number },
       relationships: { media },
+      mediaEntries,
     });
   }
 
   return { seasons: normalizedSeasons };
+}
+
+function normalizeSeasonMediaEntries(season, seasonIndex) {
+  let rawEntries = null;
+
+  if (Array.isArray(season.mediaEntries)) {
+    rawEntries = season.mediaEntries.map((entry, entryIndex) => {
+      if (typeof entry === "string") {
+        return {
+          mediaId: entry,
+          episodeNumber: entryIndex + 1,
+          mediaTitle: "",
+        };
+      }
+
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        return { __error: `seasons[${seasonIndex}].mediaEntries[${entryIndex}] must be an object or string.` };
+      }
+
+      return {
+        mediaId: entry.mediaId,
+        episodeNumber:
+          toPositiveInteger(entry.episodeNumber) || entryIndex + 1,
+        mediaTitle: typeof entry.mediaTitle === "string" ? entry.mediaTitle : "",
+      };
+    });
+  } else if (Array.isArray(season.mediaIds)) {
+    rawEntries = season.mediaIds.map((mediaId, entryIndex) => ({
+      mediaId,
+      episodeNumber: entryIndex + 1,
+      mediaTitle: "",
+    }));
+  } else {
+    return {
+      error: `seasons[${seasonIndex}] must include mediaEntries or mediaIds.`,
+    };
+  }
+
+  if (rawEntries.length === 0) {
+    return {
+      error: `seasons[${seasonIndex}] must include at least one media entry.`,
+    };
+  }
+
+  const seenEpisodeNumbers = new Set();
+  const normalizedEntries = [];
+
+  for (let entryIndex = 0; entryIndex < rawEntries.length; entryIndex += 1) {
+    const entry = rawEntries[entryIndex];
+    if (entry.__error) {
+      return { error: entry.__error };
+    }
+
+    const mediaId = normalizeMediaId(entry.mediaId);
+    if (!mediaId) {
+      return {
+        error: `seasons[${seasonIndex}] media entry ${entryIndex + 1} is missing mediaId.`,
+      };
+    }
+
+    const episodeNumber = toPositiveInteger(entry.episodeNumber);
+    if (episodeNumber === null) {
+      return {
+        error: `seasons[${seasonIndex}] media entry ${
+          entryIndex + 1
+        } has invalid episodeNumber.`,
+      };
+    }
+
+    if (seenEpisodeNumbers.has(episodeNumber)) {
+      return {
+        error: `seasons[${seasonIndex}] contains duplicate episode number ${episodeNumber}.`,
+      };
+    }
+    seenEpisodeNumbers.add(episodeNumber);
+
+    const mediaTitle =
+      typeof entry.mediaTitle === "string" ? entry.mediaTitle.trim() : "";
+    if (mediaTitle.length > TITLE_LIMIT) {
+      return {
+        error: `seasons[${seasonIndex}] media entry ${
+          entryIndex + 1
+        } mediaTitle exceeds ${TITLE_LIMIT} characters.`,
+      };
+    }
+
+    normalizedEntries.push({
+      mediaId,
+      episodeNumber,
+      mediaTitle,
+    });
+  }
+
+  normalizedEntries.sort((a, b) => a.episodeNumber - b.episodeNumber);
+  return { mediaEntries: normalizedEntries };
 }
 
 function normalizeSeriesBulkCsvRows(rows) {
@@ -1031,23 +1065,20 @@ function normalizeSeriesBulkCsvRows(rows) {
       return { error: `rows[${index}] must be an object.` };
     }
 
-    const seriesGroup = isNonEmptyString(row.seriesGroup)
-      ? row.seriesGroup.trim()
-      : isNonEmptyString(row.seriesName)
-      ? row.seriesName.trim()
-      : "";
-    const renameAfterCreate = isNonEmptyString(row.renameAfterCreate)
-      ? row.renameAfterCreate.trim()
-      : isNonEmptyString(row.seriesLabel)
-      ? row.seriesLabel.trim()
+    const mediaTitle = isNonEmptyString(row.mediaTitle)
+      ? row.mediaTitle.trim()
       : "";
     const seasonNumber = toPositiveInteger(row.seasonNumber);
     const episodeNumber = toPositiveInteger(row.episodeNumber);
-    const rawMediaIds = Array.isArray(row.mediaIds) ? row.mediaIds : [];
+    const rawMediaIds = Array.isArray(row.mediaIds)
+      ? row.mediaIds
+      : isNonEmptyString(row.mediaId)
+      ? [row.mediaId]
+      : [];
     const mediaIds = [...new Set(rawMediaIds.map(normalizeMediaId).filter(Boolean))];
 
-    if (!seriesGroup) {
-      return { error: `rows[${index}].seriesGroup or rows[${index}].seriesName is required.` };
+    if (!mediaTitle) {
+      return { error: `rows[${index}].mediaTitle is required.` };
     }
 
     if (mediaIds.length === 0) {
@@ -1065,8 +1096,7 @@ function normalizeSeriesBulkCsvRows(rows) {
     }
 
     normalizedRows.push({
-      seriesGroup,
-      renameAfterCreate,
+      mediaTitle,
       seasonNumber,
       episodeNumber,
       mediaIds,
@@ -1077,79 +1107,63 @@ function normalizeSeriesBulkCsvRows(rows) {
 }
 
 function buildSeriesBulkPlansFromRows(rows) {
-  const plansBySeries = new Map();
+  const seasonsByNumber = new Map();
 
   for (const row of rows) {
-    const seriesKey = row.seriesGroup.toLowerCase();
-    if (!plansBySeries.has(seriesKey)) {
-      plansBySeries.set(seriesKey, {
-        seriesGroup: row.seriesGroup,
-        renameAfterCreate: row.renameAfterCreate || "",
-        seasonsByNumber: new Map(),
-      });
+    if (!seasonsByNumber.has(row.seasonNumber)) {
+      seasonsByNumber.set(row.seasonNumber, new Map());
     }
 
-    const plan = plansBySeries.get(seriesKey);
-    if (row.renameAfterCreate) {
-      if (!plan.renameAfterCreate) {
-        plan.renameAfterCreate = row.renameAfterCreate;
-      } else if (plan.renameAfterCreate !== row.renameAfterCreate) {
-        return {
-          error: `Series group '${row.seriesGroup}' has conflicting RenameAfterCreate values in CSV.`,
-        };
-      }
-    }
-
-    if (!plan.seasonsByNumber.has(row.seasonNumber)) {
-      plan.seasonsByNumber.set(row.seasonNumber, new Map());
-    }
-
-    const episodesByNumber = plan.seasonsByNumber.get(row.seasonNumber);
+    const episodesByNumber = seasonsByNumber.get(row.seasonNumber);
     for (let mediaIndex = 0; mediaIndex < row.mediaIds.length; mediaIndex += 1) {
       const mediaId = row.mediaIds[mediaIndex];
       const episodeNumber = row.episodeNumber + mediaIndex;
 
       if (episodesByNumber.has(episodeNumber)) {
-        const existingMediaId = episodesByNumber.get(episodeNumber);
-        if (existingMediaId !== mediaId) {
+        const existingEntry = episodesByNumber.get(episodeNumber);
+        if (
+          existingEntry.mediaId !== mediaId ||
+          existingEntry.mediaTitle !== row.mediaTitle
+        ) {
           return {
-            error: `Series group '${row.seriesGroup}', season ${row.seasonNumber} has conflicting MediaIDs for episode ${episodeNumber}.`,
+            error: `Season ${row.seasonNumber} has conflicting values for episode ${episodeNumber}.`,
           };
         }
         continue;
       }
 
-      episodesByNumber.set(episodeNumber, mediaId);
+      episodesByNumber.set(episodeNumber, {
+        mediaId,
+        mediaTitle: row.mediaTitle,
+      });
     }
   }
 
-  const seriesPlans = [];
-  for (const plan of plansBySeries.values()) {
-    const seasons = Array.from(plan.seasonsByNumber.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([seasonNumber, episodesByNumber]) => {
-        const media = Array.from(episodesByNumber.entries())
-          .sort((a, b) => a[0] - b[0])
-          .map(([episodeNumber, mediaId]) => ({
-            id: mediaId,
-            episode_number: episodeNumber,
-          }));
+  const seasons = Array.from(seasonsByNumber.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([seasonNumber, episodesByNumber]) => {
+      const mediaEntries = Array.from(episodesByNumber.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([episodeNumber, entry]) => ({
+          mediaId: entry.mediaId,
+          episodeNumber,
+          mediaTitle: entry.mediaTitle,
+        }));
 
-        return {
-          number: seasonNumber,
-          metadata: { number: seasonNumber },
-          relationships: { media },
-        };
-      });
-
-    seriesPlans.push({
-      seriesGroup: plan.seriesGroup,
-      renameAfterCreate: plan.renameAfterCreate,
-      seasons,
+      return {
+        number: seasonNumber,
+        metadata: { number: seasonNumber },
+        relationships: {
+          media: mediaEntries.map((entry) => ({
+            id: entry.mediaId,
+            episode_number: entry.episodeNumber,
+          })),
+        },
+        mediaEntries,
+      };
     });
-  }
 
-  return { seriesPlans };
+  return { seriesPlan: { seasons } };
 }
 
 function createDefaultSeriesRenameUpdate() {
@@ -1168,6 +1182,50 @@ async function createSeasonsForSeries({ siteId, apiSecret, seriesId, seasons }) 
   const results = [];
 
   for (const season of seasons) {
+    const mediaTitleUpdates = [];
+    const mediaEntries = Array.isArray(season.mediaEntries)
+      ? season.mediaEntries
+      : [];
+
+    for (const entry of mediaEntries) {
+      if (!isNonEmptyString(entry.mediaTitle)) {
+        continue;
+      }
+
+      try {
+        const titleUpdateResult = await updateMedia({
+          siteId,
+          apiSecret,
+          mediaId: entry.mediaId,
+          metadata: { title: entry.mediaTitle.trim() },
+        });
+
+        mediaTitleUpdates.push({
+          mediaId: entry.mediaId,
+          mediaTitle: entry.mediaTitle.trim(),
+          ok: titleUpdateResult.ok,
+          jwStatus: titleUpdateResult.jwStatus,
+          endpoint: titleUpdateResult.endpoint,
+          request: { metadata: { title: entry.mediaTitle.trim() } },
+          jwResponse: titleUpdateResult.jwResponse,
+        });
+      } catch (error) {
+        mediaTitleUpdates.push({
+          mediaId: entry.mediaId,
+          mediaTitle: entry.mediaTitle.trim(),
+          ok: false,
+          jwStatus: 502,
+          error:
+            "Unable to reach JW Platform API while updating media title.",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const mediaTitleSucceeded = mediaTitleUpdates.filter(
+      (update) => update.ok
+    ).length;
+
     try {
       const createdSeason = await createSeason({
         siteId,
@@ -1187,6 +1245,12 @@ async function createSeasonsForSeries({ siteId, apiSecret, seriesId, seasons }) 
         },
         seasonId: extractResourceId(createdSeason.jwResponse),
         jwResponse: createdSeason.jwResponse,
+        mediaTitleUpdates: {
+          total: mediaTitleUpdates.length,
+          succeeded: mediaTitleSucceeded,
+          failed: mediaTitleUpdates.length - mediaTitleSucceeded,
+          results: mediaTitleUpdates,
+        },
       });
     } catch (error) {
       results.push({
@@ -1196,6 +1260,12 @@ async function createSeasonsForSeries({ siteId, apiSecret, seriesId, seasons }) 
         error:
           "Unable to reach JW Platform API while creating the season. Verify your network and retry.",
         details: error instanceof Error ? error.message : String(error),
+        mediaTitleUpdates: {
+          total: mediaTitleUpdates.length,
+          succeeded: mediaTitleSucceeded,
+          failed: mediaTitleUpdates.length - mediaTitleSucceeded,
+          results: mediaTitleUpdates,
+        },
       });
     }
   }

@@ -176,32 +176,15 @@ XyZ987ab,sales,spring</pre>
         <form id="series-map-form" class="series-step-card" novalidate>
           <h2>Step 2: Map seasons and episodes</h2>
 
-          <div class="field-group row-fields">
-            <div>
-              <label for="series-map-series-id">SeriesID</label>
-              <input
-                id="series-map-series-id"
-                name="seriesMapSeriesId"
-                type="text"
-                required
-                placeholder="Paste or use returned SeriesID"
-              />
-            </div>
-            <div>
-              <label for="series-map-rename-label"
-                >Rename label (after create)</label
-              >
-              <input
-                id="series-map-rename-label"
-                name="seriesMapRenameLabel"
-                type="text"
-                placeholder="Optional label after series exists"
-              />
-              <p class="hint">
-                Optional. The tool will try supported rename formats for
-                your tenant before mapping seasons.
-              </p>
-            </div>
+          <div class="field-group">
+            <label for="series-map-series-id">SeriesID</label>
+            <input
+              id="series-map-series-id"
+              name="seriesMapSeriesId"
+              type="text"
+              required
+              placeholder="Paste or use returned SeriesID"
+            />
           </div>
 
           <div id="series-seasons-container" class="series-seasons-container"></div>
@@ -239,15 +222,15 @@ XyZ987ab,sales,spring</pre>
               required
             />
             <p class="hint">
-              CSV columns (required): <strong>SeriesName</strong>,
+              CSV columns (required): <strong>MediaTitle</strong>,
               <strong>SeasonNumber</strong>, <strong>EpisodeNumber</strong>,
-              <strong>MediaIDs</strong>. Optional:
-              <strong>SeriesLabel</strong>.
+              <strong>MediaID</strong>.
             </p>
-            <pre class="format-example">SeriesName,SeriesLabel,SeasonNumber,EpisodeNumber,MediaIDs
-Series A,Series A Dashboard,1,1,AbCd1234|XyZ987ab
-Series A,Series A Dashboard,1,3,QwEr4567
-Series B,,1,1,RtYu5678;UiOp7890</pre>
+            <pre class="format-example">MediaTitle,SeasonNumber,EpisodeNumber,MediaID
+Episode Title A,1,1,AbCd1234
+Episode Title B,1,2,XyZ987ab
+Episode Title C,2,1,QwEr4567
+Episode Title D,2,2,RtYu5678;UiOp7890</pre>
           </div>
 
           <button type="submit" id="series-bulk-csv-submit-btn">
