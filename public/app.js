@@ -37,6 +37,9 @@ const seriesPlaceholderResponseBox = document.getElementById(
 
 const seriesMapForm = document.getElementById("series-map-form");
 const seriesMapSeriesIdInput = document.getElementById("series-map-series-id");
+const seriesMapSeriesTitleInput = document.getElementById(
+  "series-map-series-title"
+);
 const seriesSeasonsContainer = document.getElementById("series-seasons-container");
 const seriesAddSeasonButton = document.getElementById("series-add-season-btn");
 const seriesMapSubmitButton = document.getElementById("series-map-submit-btn");
@@ -257,14 +260,19 @@ function setupSeriesTools() {
       }
 
       const seasons = collectSeasonMappings();
+      const seriesTitle = seriesMapSeriesTitleInput.value.trim();
+      const payload = {
+        ...connection,
+        seriesId,
+        seasons,
+      };
+      if (seriesTitle) {
+        payload.seriesTitle = seriesTitle;
+      }
 
       await sendRequest({
         url: "/api/series/map-seasons-episodes",
-        payload: {
-          ...connection,
-          seriesId,
-          seasons,
-        },
+        payload,
         button: seriesMapSubmitButton,
         defaultButtonText: "Map seasons and episodes",
         loadingButtonText: "Mapping seasons...",
@@ -297,14 +305,15 @@ function addSeasonEditor(defaultNumber) {
         />
       </div>
       <div class="season-right">
-        <label>Media toolbox (MediaID|MediaTitle, one per line)</label>
+        <label>Media toolbox (MediaID, one per line)</label>
         <textarea
           class="season-media-ids-input"
           rows="7"
-          placeholder="AbCd1234|Episode Title 1&#10;XyZ987ab|Episode Title 2&#10;QwEr4567|Episode Title 3"
+          placeholder="AbCd1234&#10;XyZ987ab&#10;QwEr4567"
         ></textarea>
         <p class="hint">
-          Use <code>MediaID|MediaTitle</code>. Episode numbers are assigned by line order.
+          Use one <code>MediaID</code> per line. Episode numbers are assigned by
+          line order.
         </p>
       </div>
     </div>
@@ -391,27 +400,19 @@ function collectSeasonMappings() {
       );
     }
 
-    const mediaEntries = lines.map((line, lineIndex) => {
-      const separatorIndex = line.indexOf("|");
-      const mediaId =
-        separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : line.trim();
-      const mediaTitle =
-        separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : "";
-
+    const mediaIds = lines.map((line, lineIndex) => {
+      const mediaId = line.trim();
       if (!mediaId) {
         throw new Error(
-          `Season ${seasonIndex + 1}, line ${
-            lineIndex + 1
-          } is missing MediaID. Use MediaID|MediaTitle.`
+          `Season ${seasonIndex + 1}, line ${lineIndex + 1} is missing MediaID.`
         );
       }
-
-      return { mediaId, mediaTitle };
+      return mediaId;
     });
 
     return {
       number,
-      mediaEntries,
+      mediaIds,
     };
   });
 }
@@ -482,19 +483,22 @@ function parseSeriesBulkCreateCsvRows(csvText) {
   }
 
   const header = rows[0].map((value) => value.trim());
-  const mediaTitleIndex = findCsvHeaderIndex(header, "mediatitle");
+  if (normalizeCsvHeader(header[0] || "") !== "seriestitle") {
+    throw new Error("First CSV column must be SeriesTitle.");
+  }
+
+  const seriesTitleIndex = 0;
   const seasonNumberIndex = findCsvHeaderIndex(header, "seasonnumber");
   const episodeNumberIndex = findCsvHeaderIndex(header, "episodenumber");
   const mediaIdsIndex = findCsvHeaderIndexAny(header, ["mediaid", "mediaids"]);
 
   if (
-    mediaTitleIndex < 0 ||
     seasonNumberIndex < 0 ||
     episodeNumberIndex < 0 ||
     mediaIdsIndex < 0
   ) {
     throw new Error(
-      "CSV is missing required columns. Required: MediaTitle, SeasonNumber, EpisodeNumber, MediaID."
+      "CSV is missing required columns. Required: SeriesTitle, SeasonNumber, EpisodeNumber, MediaID."
     );
   }
 
@@ -507,7 +511,7 @@ function parseSeriesBulkCreateCsvRows(csvText) {
       continue;
     }
 
-    const mediaTitle = (row[mediaTitleIndex] || "").trim();
+    const seriesTitle = (row[seriesTitleIndex] || "").trim();
     const mediaIdsCell = (row[mediaIdsIndex] || "").trim();
     const seasonNumberRaw = (row[seasonNumberIndex] || "").trim();
     const episodeNumberRaw = (row[episodeNumberIndex] || "").trim();
@@ -515,8 +519,8 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     const seasonNumber = Number(seasonNumberRaw);
     const episodeNumber = Number(episodeNumberRaw);
 
-    if (!mediaTitle) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing MediaTitle.`);
+    if (!seriesTitle) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesTitle.`);
     }
 
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
@@ -539,7 +543,7 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     }
 
     parsedRows.push({
-      mediaTitle,
+      seriesTitle,
       seasonNumber,
       episodeNumber,
       mediaIds,

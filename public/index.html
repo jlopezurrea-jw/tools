@@ -187,6 +187,16 @@ XyZ987ab,sales,spring</pre>
             />
           </div>
 
+          <div class="field-group">
+            <label for="series-map-series-title">Series Title</label>
+            <input
+              id="series-map-series-title"
+              name="seriesMapSeriesTitle"
+              type="text"
+              placeholder="Title shown for this series on dashboard"
+            />
+          </div>
+
           <div id="series-seasons-container" class="series-seasons-container"></div>
 
           <div class="season-actions">
@@ -222,15 +232,15 @@ XyZ987ab,sales,spring</pre>
               required
             />
             <p class="hint">
-              CSV columns (required): <strong>MediaTitle</strong>,
+              CSV columns (required): <strong>SeriesTitle</strong>,
               <strong>SeasonNumber</strong>, <strong>EpisodeNumber</strong>,
               <strong>MediaID</strong>.
             </p>
-            <pre class="format-example">MediaTitle,SeasonNumber,EpisodeNumber,MediaID
-Episode Title A,1,1,AbCd1234
-Episode Title B,1,2,XyZ987ab
-Episode Title C,2,1,QwEr4567
-Episode Title D,2,2,RtYu5678;UiOp7890</pre>
+            <pre class="format-example">SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
+My Drama Series,1,1,AbCd1234
+My Drama Series,1,2,XyZ987ab
+My Drama Series,2,1,QwEr4567
+Nature Stories,1,1,RtYu5678;UiOp7890</pre>
           </div>
 
           <button type="submit" id="series-bulk-csv-submit-btn">
