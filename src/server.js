@@ -546,8 +546,8 @@ function normalizeSeriesSeasons(seasons) {
       return { error: `seasons[${seasonIndex}] must be an object.` };
     }
 
-    const number = Number.parseInt(String(season.number), 10);
-    if (!Number.isFinite(number) || number <= 0) {
+    const number = toPositiveInteger(season.number);
+    if (number === null) {
       return { error: `seasons[${seasonIndex}].number must be a positive integer.` };
     }
 
@@ -598,8 +598,8 @@ function normalizeSeriesSeasons(seasons) {
         };
       }
 
-      const episodeNumber = Number.parseInt(String(episode.episodeNumber), 10);
-      if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      const episodeNumber = toPositiveInteger(episode.episodeNumber);
+      if (episodeNumber === null) {
         return {
           error: `seasons[${seasonIndex}].episodes[${episodeIndex}].episodeNumber must be a positive integer.`,
         };
@@ -721,6 +721,15 @@ function extractResourceId(payload) {
   }
 
   return null;
+}
+
+function toPositiveInteger(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
 }
 
 async function jwRequest({ endpoint, method, apiSecret, body }) {

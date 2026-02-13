@@ -312,7 +312,7 @@ function parseSeriesSeasonsJson(input) {
 
     const normalizedSeason = {};
     const number = Number(season.number);
-    if (!Number.isFinite(number) || number <= 0) {
+    if (!Number.isInteger(number) || number <= 0) {
       throw new Error(
         `Season ${seasonIndex + 1} must include a positive number value.`
       );
@@ -370,7 +370,7 @@ function parseSeriesSeasonsJson(input) {
       }
 
       const episodeNumber = Number(episode.episodeNumber);
-      if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) {
         throw new Error(
           `Season ${seasonIndex + 1}, episode ${
             episodeIndex + 1
