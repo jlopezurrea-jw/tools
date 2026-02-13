@@ -147,8 +147,9 @@ QwEr4567,finance,q1,team-b
 This tab now uses a two-step workflow:
 
 1. **Create placeholder series**
+   - Enter a **Series title** in the textbox
    - Click **Create placeholder series**
-   - Tool creates a new series with a generated placeholder title
+   - Tool creates a new series using that title
    - Returned `SeriesID` is displayed and auto-filled into Step 2
 
 2. **Map seasons and episodes**
@@ -215,7 +216,8 @@ Series placeholder request payload:
 ```json
 {
   "siteId": "abc12345",
-  "apiSecret": "your_secret"
+  "apiSecret": "your_secret",
+  "seriesTitle": "My New Series"
 }
 ```
 

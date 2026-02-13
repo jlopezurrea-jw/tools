@@ -242,7 +242,7 @@ app.post("/api/media/bulk-custom-csv", async (req, res) => {
 });
 
 app.post("/api/series/create-placeholder", async (req, res) => {
-  const { siteId, apiSecret } = req.body || {};
+  const { siteId, apiSecret, seriesTitle } = req.body || {};
 
   const commonError = getSiteAndSecretValidationError(siteId, apiSecret);
   if (commonError) {
@@ -252,13 +252,20 @@ app.post("/api/series/create-placeholder", async (req, res) => {
     });
   }
 
-  const generatedTitle = createPlaceholderSeriesTitle();
+  if (!isNonEmptyString(seriesTitle)) {
+    return res.status(400).json({
+      ok: false,
+      error: "seriesTitle is required.",
+    });
+  }
+
+  const normalizedSeriesTitle = seriesTitle.trim();
 
   try {
     const createdSeries = await createSeries({
       siteId: siteId.trim(),
       apiSecret: apiSecret.trim(),
-      metadata: { title: generatedTitle },
+      metadata: { title: normalizedSeriesTitle },
     });
 
     const seriesId = extractResourceId(createdSeries.jwResponse);
@@ -267,12 +274,12 @@ app.post("/api/series/create-placeholder", async (req, res) => {
       ok,
       mode: "series-create-placeholder",
       seriesId: seriesId || null,
-      title: generatedTitle,
+      title: normalizedSeriesTitle,
       series: {
         ok: createdSeries.ok,
         jwStatus: createdSeries.jwStatus,
         endpoint: createdSeries.endpoint,
-        request: { metadata: { title: generatedTitle } },
+        request: { metadata: { title: normalizedSeriesTitle } },
         jwResponse: createdSeries.jwResponse,
       },
     });
@@ -916,10 +923,6 @@ function toPositiveInteger(value) {
   }
 
   return parsed;
-}
-
-function createPlaceholderSeriesTitle() {
-  return `Placeholder Series ${new Date().toISOString()}`;
 }
 
 async function jwRequest({ endpoint, method, apiSecret, body }) {
