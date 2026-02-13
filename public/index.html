@@ -210,79 +210,60 @@ XyZ987ab,sales,spring</pre>
       </section>
 
       <section id="series-tab" class="tab-panel" role="tabpanel" hidden>
-        <form id="series-form" novalidate>
+        <section class="series-step-card">
+          <h2>Step 1: Create placeholder series</h2>
+          <p class="hint">
+            Click once to create a new placeholder series. The generated
+            <strong>SeriesID</strong> will be returned and auto-filled below.
+          </p>
+          <button
+            type="button"
+            id="series-create-placeholder-btn"
+            class="primary-button"
+          >
+            Create placeholder series
+          </button>
+
+          <section class="result-section compact-result">
+            <p id="series-placeholder-status-line">No request sent yet.</p>
+            <pre id="series-placeholder-response-box" aria-live="polite"></pre>
+          </section>
+        </section>
+
+        <form id="series-map-form" class="series-step-card" novalidate>
+          <h2>Step 2: Map seasons and episodes</h2>
+
           <div class="field-group">
-            <label for="series-title">Series title</label>
+            <label for="series-map-series-id">SeriesID</label>
             <input
-              id="series-title"
-              name="seriesTitle"
+              id="series-map-series-id"
+              name="seriesMapSeriesId"
               type="text"
               required
-              placeholder="My New Series"
+              placeholder="Paste or use returned SeriesID"
             />
           </div>
 
-          <div class="field-group row-fields">
-            <div>
-              <label for="series-season-sort">Season sort (optional)</label>
-              <select id="series-season-sort" name="seriesSeasonSort">
-                <option value="">Default</option>
-                <option value="asc">asc</option>
-                <option value="dsc">dsc</option>
-              </select>
-            </div>
-            <div>
-              <label for="series-episode-sort">Episode sort (optional)</label>
-              <select id="series-episode-sort" name="seriesEpisodeSort">
-                <option value="">Default</option>
-                <option value="asc">asc</option>
-                <option value="dsc">dsc</option>
-              </select>
-            </div>
-          </div>
+          <div id="series-seasons-container" class="series-seasons-container"></div>
 
-          <div class="field-group">
-            <label for="series-seasons-json">
-              Seasons and episodes JSON (required)
-            </label>
-            <textarea
-              id="series-seasons-json"
-              name="seriesSeasonsJson"
-              rows="12"
-              placeholder='[
-  {
-    "number": 1,
-    "title": "Season 1",
-    "description": "Optional season description",
-    "episodes": [
-      { "mediaId": "AbCd1234", "episodeNumber": 1 },
-      { "mediaId": "XyZ987ab", "episodeNumber": 2 }
-    ]
-  },
-  {
-    "number": 2,
-    "episodes": [
-      { "mediaId": "QwEr4567", "episodeNumber": 1 }
-    ]
-  }
-]'
-            ></textarea>
-            <p class="hint">
-              Each season needs a <strong>number</strong> and an
-              <strong>episodes</strong> array. Each episode requires
-              <strong>mediaId</strong> and <strong>episodeNumber</strong>.
-            </p>
+          <div class="season-actions">
+            <button
+              type="button"
+              id="series-add-season-btn"
+              class="secondary-button"
+            >
+              + Season
+            </button>
+            <button type="submit" id="series-map-submit-btn">
+              Map seasons and episodes
+            </button>
           </div>
-
-          <button type="submit" id="series-submit-btn">
-            Create series and seasons
-          </button>
         </form>
 
         <section class="result-section">
           <h2>Result</h2>
-          <p id="series-status-line">No request sent yet.</p>
-          <pre id="series-response-box" aria-live="polite"></pre>
+          <p id="series-map-status-line">No request sent yet.</p>
+          <pre id="series-map-response-box" aria-live="polite"></pre>
         </section>
       </section>
     </main>

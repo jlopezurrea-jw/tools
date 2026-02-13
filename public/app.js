@@ -19,16 +19,29 @@ const bulkCsvSubmitButton = document.getElementById("bulk-csv-submit-btn");
 const bulkCsvStatusLine = document.getElementById("bulk-csv-status-line");
 const bulkCsvResponseBox = document.getElementById("bulk-csv-response-box");
 
-const seriesForm = document.getElementById("series-form");
-const seriesSubmitButton = document.getElementById("series-submit-btn");
-const seriesStatusLine = document.getElementById("series-status-line");
-const seriesResponseBox = document.getElementById("series-response-box");
+const seriesCreatePlaceholderButton = document.getElementById(
+  "series-create-placeholder-btn"
+);
+const seriesPlaceholderStatusLine = document.getElementById(
+  "series-placeholder-status-line"
+);
+const seriesPlaceholderResponseBox = document.getElementById(
+  "series-placeholder-response-box"
+);
+
+const seriesMapForm = document.getElementById("series-map-form");
+const seriesMapSeriesIdInput = document.getElementById("series-map-series-id");
+const seriesSeasonsContainer = document.getElementById("series-seasons-container");
+const seriesAddSeasonButton = document.getElementById("series-add-season-btn");
+const seriesMapSubmitButton = document.getElementById("series-map-submit-btn");
+const seriesMapStatusLine = document.getElementById("series-map-status-line");
+const seriesMapResponseBox = document.getElementById("series-map-response-box");
 
 setupTabs();
 setupSingleUpdateForm();
 setupBulkLinesForm();
 setupBulkCsvForm();
-setupSeriesForm();
+setupSeriesTools();
 
 function setupTabs() {
   tabButtons.forEach((button) => {
@@ -176,57 +189,217 @@ function setupBulkCsvForm() {
   });
 }
 
-function setupSeriesForm() {
-  seriesForm.addEventListener("submit", async (event) => {
+function setupSeriesTools() {
+  addSeasonEditor(1);
+
+  seriesCreatePlaceholderButton.addEventListener("click", async () => {
+    try {
+      const connection = getConnectionSettings();
+      await sendRequest({
+        url: "/api/series/create-placeholder",
+        payload: connection,
+        button: seriesCreatePlaceholderButton,
+        defaultButtonText: "Create placeholder series",
+        loadingButtonText: "Creating series...",
+        statusLine: seriesPlaceholderStatusLine,
+        responseBox: seriesPlaceholderResponseBox,
+        onSuccessMessage: (_response, data) => {
+          const seriesId = data?.seriesId || "";
+          if (seriesId) {
+            seriesMapSeriesIdInput.value = seriesId;
+            return `Placeholder series created. SeriesID: ${seriesId}`;
+          }
+
+          return "Placeholder series request completed.";
+        },
+      });
+    } catch (error) {
+      showFailure(seriesPlaceholderStatusLine, seriesPlaceholderResponseBox, error);
+    }
+  });
+
+  seriesAddSeasonButton.addEventListener("click", () => {
+    addSeasonEditor(getNextSeasonNumber());
+  });
+
+  seriesSeasonsContainer.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const removeButton = target.closest(".remove-season-button");
+    if (!removeButton) {
+      return;
+    }
+
+    const seasonEditor = removeButton.closest(".season-editor");
+    if (!(seasonEditor instanceof HTMLElement)) {
+      return;
+    }
+
+    const seasonEditors = seriesSeasonsContainer.querySelectorAll(".season-editor");
+    if (seasonEditors.length <= 1) {
+      clearSeasonEditor(seasonEditor);
+      return;
+    }
+
+    seasonEditor.remove();
+  });
+
+  seriesMapForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     try {
       const connection = getConnectionSettings();
-      const formData = new FormData(seriesForm);
-      const seriesTitle = String(formData.get("seriesTitle") || "").trim();
-      const seriesSeasonSort = String(formData.get("seriesSeasonSort") || "").trim();
-      const seriesEpisodeSort = String(
-        formData.get("seriesEpisodeSort") || ""
-      ).trim();
-      const seasonsJsonInput = String(formData.get("seriesSeasonsJson") || "");
-
-      if (!seriesTitle) {
-        throw new Error("Series title is required.");
+      const seriesId = seriesMapSeriesIdInput.value.trim();
+      if (!seriesId) {
+        throw new Error("SeriesID is required to map seasons and episodes.");
       }
 
-      const sort = {};
-      if (seriesSeasonSort) {
-        sort.season = seriesSeasonSort;
-      }
-      if (seriesEpisodeSort) {
-        sort.episode = seriesEpisodeSort;
-      }
-
-      const seasons = parseSeriesSeasonsJson(seasonsJsonInput);
+      const seasons = collectSeasonMappings();
 
       await sendRequest({
-        url: "/api/series/create-with-seasons",
+        url: "/api/series/map-seasons-episodes",
         payload: {
           ...connection,
-          seriesTitle,
-          sort,
+          seriesId,
           seasons,
         },
-        button: seriesSubmitButton,
-        defaultButtonText: "Create series and seasons",
-        loadingButtonText: "Creating series...",
-        statusLine: seriesStatusLine,
-        responseBox: seriesResponseBox,
-        onSuccessMessage: (_response, data) => {
-          const seriesId = data?.series?.seriesId || "(unknown)";
-          const succeeded = data?.seasons?.succeeded ?? 0;
-          const total = data?.seasons?.total ?? 0;
-          return `Series created (${seriesId}). Seasons created: ${succeeded}/${total}.`;
-        },
+        button: seriesMapSubmitButton,
+        defaultButtonText: "Map seasons and episodes",
+        loadingButtonText: "Mapping seasons...",
+        statusLine: seriesMapStatusLine,
+        responseBox: seriesMapResponseBox,
+        onSuccessMessage: (_response, data) =>
+          `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
+            data?.seasons?.total ?? 0
+          } seasons succeeded.`,
       });
     } catch (error) {
-      showFailure(seriesStatusLine, seriesResponseBox, error);
+      showFailure(seriesMapStatusLine, seriesMapResponseBox, error);
     }
+  });
+}
+
+function addSeasonEditor(defaultNumber) {
+  const seasonEditor = document.createElement("section");
+  seasonEditor.className = "season-editor";
+  seasonEditor.innerHTML = `
+    <div class="season-editor-grid">
+      <div class="season-left">
+        <label>Season Number</label>
+        <input
+          class="season-number-input"
+          type="number"
+          min="1"
+          step="1"
+          placeholder="1"
+        />
+      </div>
+      <div class="season-right">
+        <label>MediaIDs toolbox (one per line)</label>
+        <textarea
+          class="season-media-ids-input"
+          rows="7"
+          placeholder="AbCd1234&#10;XyZ987ab&#10;QwEr4567"
+        ></textarea>
+        <p class="hint">
+          Episode numbers are assigned by order: first line = episode 1, second line = episode 2, etc.
+        </p>
+      </div>
+    </div>
+    <div class="season-editor-actions">
+      <button type="button" class="remove-season-button secondary-button">Remove season</button>
+    </div>
+  `;
+
+  const seasonNumberInput = seasonEditor.querySelector(".season-number-input");
+  if (seasonNumberInput instanceof HTMLInputElement && Number.isInteger(defaultNumber)) {
+    seasonNumberInput.value = String(defaultNumber);
+  }
+
+  seriesSeasonsContainer.append(seasonEditor);
+}
+
+function clearSeasonEditor(seasonEditor) {
+  const numberInput = seasonEditor.querySelector(".season-number-input");
+  const mediaInput = seasonEditor.querySelector(".season-media-ids-input");
+
+  if (numberInput instanceof HTMLInputElement) {
+    numberInput.value = "1";
+  }
+
+  if (mediaInput instanceof HTMLTextAreaElement) {
+    mediaInput.value = "";
+  }
+}
+
+function getNextSeasonNumber() {
+  const values = Array.from(
+    seriesSeasonsContainer.querySelectorAll(".season-number-input")
+  )
+    .map((input) => Number(input.value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (values.length === 0) {
+    return 1;
+  }
+
+  return Math.max(...values) + 1;
+}
+
+function collectSeasonMappings() {
+  const seasonEditors = Array.from(
+    seriesSeasonsContainer.querySelectorAll(".season-editor")
+  );
+  if (seasonEditors.length === 0) {
+    throw new Error("Add at least one season before mapping episodes.");
+  }
+
+  const seenSeasonNumbers = new Set();
+
+  return seasonEditors.map((seasonEditor, seasonIndex) => {
+    const numberInput = seasonEditor.querySelector(".season-number-input");
+    const mediaInput = seasonEditor.querySelector(".season-media-ids-input");
+
+    if (!(numberInput instanceof HTMLInputElement)) {
+      throw new Error(`Season ${seasonIndex + 1} is missing number input.`);
+    }
+
+    if (!(mediaInput instanceof HTMLTextAreaElement)) {
+      throw new Error(`Season ${seasonIndex + 1} is missing MediaID toolbox.`);
+    }
+
+    const number = Number(numberInput.value);
+    if (!Number.isInteger(number) || number <= 0) {
+      throw new Error(`Season ${seasonIndex + 1} must have a positive number.`);
+    }
+
+    if (seenSeasonNumbers.has(number)) {
+      throw new Error(`Duplicate season number detected: ${number}.`);
+    }
+    seenSeasonNumbers.add(number);
+
+    const mediaIds = [
+      ...new Set(
+        mediaInput.value
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+      ),
+    ];
+
+    if (mediaIds.length === 0) {
+      throw new Error(
+        `Season ${seasonIndex + 1} must include at least one MediaID.`
+      );
+    }
+
+    return {
+      number,
+      mediaIds,
+    };
   });
 }
 
@@ -287,102 +460,6 @@ function parseCustomParams(input, { requireAtLeastOne }) {
   }
 
   return result;
-}
-
-function parseSeriesSeasonsJson(input) {
-  if (!input.trim()) {
-    throw new Error("Seasons JSON is required.");
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(input);
-  } catch {
-    throw new Error("Seasons JSON is invalid. Verify the JSON format.");
-  }
-
-  if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new Error("Seasons JSON must be a non-empty array.");
-  }
-
-  return parsed.map((season, seasonIndex) => {
-    if (season === null || typeof season !== "object" || Array.isArray(season)) {
-      throw new Error(`Season ${seasonIndex + 1} must be an object.`);
-    }
-
-    const normalizedSeason = {};
-    const number = Number(season.number);
-    if (!Number.isInteger(number) || number <= 0) {
-      throw new Error(
-        `Season ${seasonIndex + 1} must include a positive number value.`
-      );
-    }
-    normalizedSeason.number = number;
-
-    if (season.title !== undefined) {
-      if (typeof season.title !== "string") {
-        throw new Error(`Season ${seasonIndex + 1} title must be a string.`);
-      }
-      const title = season.title.trim();
-      if (title) {
-        normalizedSeason.title = title;
-      }
-    }
-
-    if (season.description !== undefined) {
-      if (typeof season.description !== "string") {
-        throw new Error(
-          `Season ${seasonIndex + 1} description must be a string.`
-        );
-      }
-      const description = season.description.trim();
-      if (description) {
-        normalizedSeason.description = description;
-      }
-    }
-
-    if (!Array.isArray(season.episodes) || season.episodes.length === 0) {
-      throw new Error(
-        `Season ${seasonIndex + 1} must include a non-empty episodes array.`
-      );
-    }
-
-    normalizedSeason.episodes = season.episodes.map((episode, episodeIndex) => {
-      if (
-        episode === null ||
-        typeof episode !== "object" ||
-        Array.isArray(episode)
-      ) {
-        throw new Error(
-          `Season ${seasonIndex + 1}, episode ${
-            episodeIndex + 1
-          } must be an object.`
-        );
-      }
-
-      const mediaId = String(episode.mediaId || "").trim();
-      if (!mediaId) {
-        throw new Error(
-          `Season ${seasonIndex + 1}, episode ${
-            episodeIndex + 1
-          } must include mediaId.`
-        );
-      }
-
-      const episodeNumber = Number(episode.episodeNumber);
-      if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) {
-        throw new Error(
-          `Season ${seasonIndex + 1}, episode ${
-            episodeIndex + 1
-          } must include a positive episodeNumber.`
-        );
-      }
-
-      return { mediaId, episodeNumber };
-    });
-
-    return normalizedSeason;
-  });
 }
 
 function parseCsvUpdates(csvText) {

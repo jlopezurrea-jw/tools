@@ -111,7 +111,8 @@ textarea {
   display: block;
 }
 
-button[type="submit"] {
+button[type="submit"],
+.primary-button {
   border: 0;
   border-radius: 6px;
   padding: 10px 16px;
@@ -124,6 +125,64 @@ button[type="submit"] {
 button:disabled {
   background: #6b7280;
   cursor: default;
+}
+
+.secondary-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 9px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #1f2937;
+  background: #fff;
+}
+
+.series-step-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.series-step-card h2 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.compact-result {
+  margin-top: 14px;
+}
+
+.series-seasons-container {
+  display: grid;
+  gap: 12px;
+}
+
+.season-editor {
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.season-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(260px, 1fr);
+  gap: 12px;
+}
+
+.season-editor-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.season-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .format-example {
@@ -155,4 +214,10 @@ pre[id$="response-box"] {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 740px) {
+  .season-editor-grid {
+    grid-template-columns: 1fr;
+  }
 }

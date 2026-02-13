@@ -12,7 +12,7 @@ The app uses:
 
 ## Features
 
-The UI has three tabs:
+The UI has four tabs:
 
 1. **Single update**
    - Input: Property ID, API Secret, Media ID
@@ -32,9 +32,9 @@ The UI has three tabs:
 
 4. **Series setup**
    - Input: Property ID, API Secret
-   - Create a new series
-   - Define seasons
-   - Define episode mappings (Media IDs with episode numbers) for each season
+   - One-click placeholder series creation (returns `SeriesID`)
+   - Season/episode mapping workspace
+   - `+ Season` flow for adding multiple seasons with media toolboxes
 
 ---
 
@@ -144,34 +144,20 @@ QwEr4567,finance,q1,team-b
 
 ### Series setup tab
 
-This tab creates a series and then creates each provided season under that
-series, including episode assignments.
+This tab now uses a two-step workflow:
 
-Required fields:
+1. **Create placeholder series**
+   - Click **Create placeholder series**
+   - Tool creates a new series with a generated placeholder title
+   - Returned `SeriesID` is displayed and auto-filled into Step 2
 
-- `seriesTitle`
-- `seasons` JSON array
-
-Season JSON shape:
-
-```json
-[
-  {
-    "number": 1,
-    "title": "Season 1",
-    "description": "Optional text",
-    "episodes": [
-      { "mediaId": "AbCd1234", "episodeNumber": 1 },
-      { "mediaId": "XyZ987ab", "episodeNumber": 2 }
-    ]
-  }
-]
-```
-
-Sort options (optional):
-
-- `sort.season`: `asc` or `dsc`
-- `sort.episode`: `asc` or `dsc`
+2. **Map seasons and episodes**
+   - Enter or confirm `SeriesID`
+   - Add season cards with **+ Season**
+   - Left side: season number
+   - Right side: MediaIDs toolbox (one MediaID per line)
+   - Episode numbers are assigned automatically by line order
+     (`line 1 = episode 1`, `line 2 = episode 2`, etc.)
 
 ---
 
@@ -224,26 +210,26 @@ Bulk CSV request payload (after parsing in browser):
 }
 ```
 
-Series setup request payload:
+Series placeholder request payload:
+
+```json
+{
+  "siteId": "abc12345",
+  "apiSecret": "your_secret"
+}
+```
+
+Series mapping request payload:
 
 ```json
 {
   "siteId": "abc12345",
   "apiSecret": "your_secret",
-  "seriesTitle": "My New Series",
-  "sort": {
-    "season": "asc",
-    "episode": "asc"
-  },
+  "seriesId": "Series12345",
   "seasons": [
     {
       "number": 1,
-      "title": "Season 1",
-      "description": "Optional",
-      "episodes": [
-        { "mediaId": "AbCd1234", "episodeNumber": 1 },
-        { "mediaId": "XyZ987ab", "episodeNumber": 2 }
-      ]
+      "mediaIds": ["AbCd1234", "XyZ987ab", "QwEr4567"]
     }
   ]
 }
