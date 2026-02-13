@@ -253,25 +253,24 @@ app.post("/api/series/create-placeholder", async (req, res) => {
     });
   }
 
-  const requestedSeriesName = isNonEmptyString(seriesName)
+  const requestedLabel = isNonEmptyString(seriesName)
     ? seriesName.trim()
     : isNonEmptyString(seriesTitle)
     ? seriesTitle.trim()
     : "";
-  const placeholderSeriesName =
-    requestedSeriesName || createPlaceholderSeriesName();
+  const placeholderLabel = requestedLabel || createPlaceholderSeriesName();
 
   try {
     const placeholderResult = await createPlaceholderSeriesResource({
       siteId: siteId.trim(),
       apiSecret: apiSecret.trim(),
-      seriesName: placeholderSeriesName,
+      placeholderLabel,
     });
     return res.status(placeholderResult.jwStatus).json({
       ok: placeholderResult.ok,
       mode: "series-create-placeholder",
       seriesId: placeholderResult.seriesId,
-      seriesName: placeholderResult.seriesName,
+      placeholderLabel: placeholderResult.placeholderLabel,
       strategy: placeholderResult.strategy,
       series: {
         ok: placeholderResult.ok,
@@ -292,7 +291,8 @@ app.post("/api/series/create-placeholder", async (req, res) => {
 });
 
 app.post("/api/series/map-seasons-episodes", async (req, res) => {
-  const { siteId, apiSecret, seriesId, seriesTitle, seasons } = req.body || {};
+  const { siteId, apiSecret, seriesId, renameTo, seriesTitle, seasons } =
+    req.body || {};
 
   const commonError = getSiteAndSecretValidationError(siteId, apiSecret);
   if (commonError) {
@@ -318,22 +318,24 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
   }
 
   const normalizedSeasons = normalizedResult.seasons;
-  const normalizedSeriesTitle = isNonEmptyString(seriesTitle)
+  const requestedRename = isNonEmptyString(renameTo)
+    ? renameTo.trim()
+    : isNonEmptyString(seriesTitle)
     ? seriesTitle.trim()
     : "";
 
-  let seriesTitleUpdate = createDefaultSeriesTitleUpdate();
+  let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
 
-  if (normalizedSeriesTitle) {
+  if (requestedRename) {
     try {
-      seriesTitleUpdate = await updateSeriesTitle({
+      seriesRenameUpdate = await updateSeriesLabel({
         siteId: siteId.trim(),
         apiSecret: apiSecret.trim(),
         seriesId: seriesId.trim(),
-        seriesTitle: normalizedSeriesTitle,
+        renameTo: requestedRename,
       });
     } catch (error) {
-      seriesTitleUpdate = {
+      seriesRenameUpdate = {
         attempted: true,
         ok: false,
         strategy: "network_error",
@@ -344,7 +346,7 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
         request: null,
         jwResponse: {
           error:
-            "Unable to reach JW Platform API while updating series title.",
+            "Unable to reach JW Platform API while updating series label.",
           details: error instanceof Error ? error.message : String(error),
         },
       };
@@ -358,15 +360,15 @@ app.post("/api/series/map-seasons-episodes", async (req, res) => {
     seasons: normalizedSeasons,
   });
   const { results: seasonResults, succeeded, failed } = seasonRun;
-  const hasTitleFailure =
-    seriesTitleUpdate.attempted && seriesTitleUpdate.ok === false;
-  const statusCode = failed === 0 && !hasTitleFailure ? 201 : 207;
+  const hasRenameFailure =
+    seriesRenameUpdate.attempted && seriesRenameUpdate.ok === false;
+  const statusCode = failed === 0 && !hasRenameFailure ? 201 : 207;
 
   return res.status(statusCode).json({
-    ok: failed === 0 && !hasTitleFailure,
+    ok: failed === 0 && !hasRenameFailure,
     mode: "series-map-seasons-episodes",
     seriesId: seriesId.trim(),
-    seriesTitleUpdate,
+    seriesRenameUpdate,
     seasons: {
       total: seasonResults.length,
       succeeded,
@@ -433,12 +435,12 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
       placeholderResult = await createPlaceholderSeriesResource({
         siteId: siteId.trim(),
         apiSecret: apiSecret.trim(),
-        seriesName: plan.seriesName,
+        placeholderLabel: plan.seriesGroup,
       });
     } catch (error) {
       seriesResults.push({
-        seriesName: plan.seriesName,
-        seriesTitle: plan.seriesTitle || null,
+        seriesGroup: plan.seriesGroup,
+        renameAfterCreate: plan.renameAfterCreate || null,
         series: {
           ok: false,
           jwStatus: 502,
@@ -452,7 +454,7 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
             details: error instanceof Error ? error.message : String(error),
           },
         },
-        seriesTitleUpdate: createDefaultSeriesTitleUpdate(),
+        seriesRenameUpdate: createDefaultSeriesRenameUpdate(),
         seasons: {
           total: plan.seasons.length,
           succeeded: 0,
@@ -465,8 +467,8 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
 
     if (!placeholderResult.ok || !placeholderResult.seriesId) {
       seriesResults.push({
-        seriesName: plan.seriesName,
-        seriesTitle: plan.seriesTitle || null,
+        seriesGroup: plan.seriesGroup,
+        renameAfterCreate: plan.renameAfterCreate || null,
         series: {
           ok: placeholderResult.ok,
           jwStatus: placeholderResult.jwStatus,
@@ -476,7 +478,7 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
           strategy: placeholderResult.strategy,
           seriesId: placeholderResult.seriesId,
         },
-        seriesTitleUpdate: createDefaultSeriesTitleUpdate(),
+        seriesRenameUpdate: createDefaultSeriesRenameUpdate(),
         seasons: {
           total: plan.seasons.length,
           succeeded: 0,
@@ -487,17 +489,17 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
       continue;
     }
 
-    let seriesTitleUpdate = createDefaultSeriesTitleUpdate();
-    if (plan.seriesTitle) {
+    let seriesRenameUpdate = createDefaultSeriesRenameUpdate();
+    if (plan.renameAfterCreate) {
       try {
-        seriesTitleUpdate = await updateSeriesTitle({
+        seriesRenameUpdate = await updateSeriesLabel({
           siteId: siteId.trim(),
           apiSecret: apiSecret.trim(),
           seriesId: placeholderResult.seriesId,
-          seriesTitle: plan.seriesTitle,
+          renameTo: plan.renameAfterCreate,
         });
       } catch (error) {
-        seriesTitleUpdate = {
+        seriesRenameUpdate = {
           attempted: true,
           ok: false,
           strategy: "network_error",
@@ -508,7 +510,7 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
           request: null,
           jwResponse: {
             error:
-              "Unable to reach JW Platform API while updating series title.",
+              "Unable to reach JW Platform API while updating series label.",
             details: error instanceof Error ? error.message : String(error),
           },
         };
@@ -523,8 +525,8 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
     });
 
     seriesResults.push({
-      seriesName: plan.seriesName,
-      seriesTitle: plan.seriesTitle || null,
+      seriesGroup: plan.seriesGroup,
+      renameAfterCreate: plan.renameAfterCreate || null,
       series: {
         ok: placeholderResult.ok,
         jwStatus: placeholderResult.jwStatus,
@@ -534,7 +536,7 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
         strategy: placeholderResult.strategy,
         seriesId: placeholderResult.seriesId,
       },
-      seriesTitleUpdate,
+      seriesRenameUpdate,
       seasons: seasonRun,
     });
   }
@@ -551,9 +553,9 @@ app.post("/api/series/bulk-create-csv", async (req, res) => {
   );
   const seasonsFailed = totalSeasons - seasonsSucceeded;
   const fullySucceeded = seriesResults.filter((result) => {
-    const titleFailed =
-      result.seriesTitleUpdate.attempted && !result.seriesTitleUpdate.ok;
-    return result.series.ok && !titleFailed && result.seasons.failed === 0;
+    const renameFailed =
+      result.seriesRenameUpdate.attempted && !result.seriesRenameUpdate.ok;
+    return result.series.ok && !renameFailed && result.seasons.failed === 0;
   }).length;
   const failedSeries = totalSeries - fullySucceeded;
 
@@ -1029,22 +1031,23 @@ function normalizeSeriesBulkCsvRows(rows) {
       return { error: `rows[${index}] must be an object.` };
     }
 
-    const seriesName = isNonEmptyString(row.seriesName)
-      ? row.seriesName.trim()
+    const seriesGroup = isNonEmptyString(row.seriesGroup)
+      ? row.seriesGroup.trim()
       : "";
-    const seriesTitle = isNonEmptyString(row.seriesTitle)
-      ? row.seriesTitle.trim()
+    const renameAfterCreate = isNonEmptyString(row.renameAfterCreate)
+      ? row.renameAfterCreate.trim()
       : "";
-    const mediaId = normalizeMediaId(row.mediaId);
     const seasonNumber = toPositiveInteger(row.seasonNumber);
     const episodeNumber = toPositiveInteger(row.episodeNumber);
+    const rawMediaIds = Array.isArray(row.mediaIds) ? row.mediaIds : [];
+    const mediaIds = [...new Set(rawMediaIds.map(normalizeMediaId).filter(Boolean))];
 
-    if (!seriesName) {
-      return { error: `rows[${index}].seriesName is required.` };
+    if (!seriesGroup) {
+      return { error: `rows[${index}].seriesGroup is required.` };
     }
 
-    if (!mediaId) {
-      return { error: `rows[${index}].mediaId is required.` };
+    if (mediaIds.length === 0) {
+      return { error: `rows[${index}].mediaIds must include at least one MediaID.` };
     }
 
     if (seasonNumber === null) {
@@ -1058,11 +1061,11 @@ function normalizeSeriesBulkCsvRows(rows) {
     }
 
     normalizedRows.push({
-      seriesName,
-      seriesTitle,
+      seriesGroup,
+      renameAfterCreate,
       seasonNumber,
       episodeNumber,
-      mediaId,
+      mediaIds,
     });
   }
 
@@ -1073,22 +1076,22 @@ function buildSeriesBulkPlansFromRows(rows) {
   const plansBySeries = new Map();
 
   for (const row of rows) {
-    const seriesKey = row.seriesName.toLowerCase();
+    const seriesKey = row.seriesGroup.toLowerCase();
     if (!plansBySeries.has(seriesKey)) {
       plansBySeries.set(seriesKey, {
-        seriesName: row.seriesName,
-        seriesTitle: row.seriesTitle || "",
+        seriesGroup: row.seriesGroup,
+        renameAfterCreate: row.renameAfterCreate || "",
         seasonsByNumber: new Map(),
       });
     }
 
     const plan = plansBySeries.get(seriesKey);
-    if (row.seriesTitle) {
-      if (!plan.seriesTitle) {
-        plan.seriesTitle = row.seriesTitle;
-      } else if (plan.seriesTitle !== row.seriesTitle) {
+    if (row.renameAfterCreate) {
+      if (!plan.renameAfterCreate) {
+        plan.renameAfterCreate = row.renameAfterCreate;
+      } else if (plan.renameAfterCreate !== row.renameAfterCreate) {
         return {
-          error: `Series '${row.seriesName}' has conflicting SeriesTitle values in CSV.`,
+          error: `Series group '${row.seriesGroup}' has conflicting RenameAfterCreate values in CSV.`,
         };
       }
     }
@@ -1098,17 +1101,22 @@ function buildSeriesBulkPlansFromRows(rows) {
     }
 
     const episodesByNumber = plan.seasonsByNumber.get(row.seasonNumber);
-    if (episodesByNumber.has(row.episodeNumber)) {
-      const existingMediaId = episodesByNumber.get(row.episodeNumber);
-      if (existingMediaId !== row.mediaId) {
-        return {
-          error: `Series '${row.seriesName}', season ${row.seasonNumber} has conflicting MediaID values for episode ${row.episodeNumber}.`,
-        };
-      }
-      continue;
-    }
+    for (let mediaIndex = 0; mediaIndex < row.mediaIds.length; mediaIndex += 1) {
+      const mediaId = row.mediaIds[mediaIndex];
+      const episodeNumber = row.episodeNumber + mediaIndex;
 
-    episodesByNumber.set(row.episodeNumber, row.mediaId);
+      if (episodesByNumber.has(episodeNumber)) {
+        const existingMediaId = episodesByNumber.get(episodeNumber);
+        if (existingMediaId !== mediaId) {
+          return {
+            error: `Series group '${row.seriesGroup}', season ${row.seasonNumber} has conflicting MediaIDs for episode ${episodeNumber}.`,
+          };
+        }
+        continue;
+      }
+
+      episodesByNumber.set(episodeNumber, mediaId);
+    }
   }
 
   const seriesPlans = [];
@@ -1131,8 +1139,8 @@ function buildSeriesBulkPlansFromRows(rows) {
       });
 
     seriesPlans.push({
-      seriesName: plan.seriesName,
-      seriesTitle: plan.seriesTitle,
+      seriesGroup: plan.seriesGroup,
+      renameAfterCreate: plan.renameAfterCreate,
       seasons,
     });
   }
@@ -1140,7 +1148,7 @@ function buildSeriesBulkPlansFromRows(rows) {
   return { seriesPlans };
 }
 
-function createDefaultSeriesTitleUpdate() {
+function createDefaultSeriesRenameUpdate() {
   return {
     attempted: false,
     ok: false,
@@ -1264,19 +1272,23 @@ async function createSeries({ siteId, apiSecret, metadata }) {
   });
 }
 
-async function createPlaceholderSeriesResource({ siteId, apiSecret, seriesName }) {
-  let metadataUsed = { title: seriesName };
-  let strategy = "metadata.title";
+async function createPlaceholderSeriesResource({
+  siteId,
+  apiSecret,
+  placeholderLabel,
+}) {
+  let metadataUsed = {};
+  let strategy = "metadata.empty";
   let createdSeries = await createSeries({
     siteId,
     apiSecret,
     metadata: metadataUsed,
   });
 
-  // Some tenants reject metadata.title with "title was unexpected".
-  if (!createdSeries.ok && hasTitleUnexpectedError(createdSeries.jwResponse)) {
-    metadataUsed = {};
-    strategy = "metadata.empty";
+  // Some tenants require metadata.title even for placeholders.
+  if (!createdSeries.ok && hasTitleRequiredError(createdSeries.jwResponse)) {
+    metadataUsed = { title: placeholderLabel };
+    strategy = "metadata.auto_title";
     createdSeries = await createSeries({
       siteId,
       apiSecret,
@@ -1288,7 +1300,7 @@ async function createPlaceholderSeriesResource({ siteId, apiSecret, seriesName }
   return {
     ok: createdSeries.ok && isNonEmptyString(seriesId),
     seriesId: seriesId || null,
-    seriesName,
+    placeholderLabel,
     strategy,
     jwStatus: createdSeries.jwStatus,
     endpoint: createdSeries.endpoint,
@@ -1313,7 +1325,7 @@ async function createSeason({ siteId, apiSecret, seriesId, season }) {
   });
 }
 
-async function updateSeriesTitle({ siteId, apiSecret, seriesId, seriesTitle }) {
+async function updateSeriesLabel({ siteId, apiSecret, seriesId, renameTo }) {
   const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
     siteId
   )}/series/${encodeURIComponent(seriesId)}/`;
@@ -1321,19 +1333,19 @@ async function updateSeriesTitle({ siteId, apiSecret, seriesId, seriesTitle }) {
   const strategies = [
     {
       name: "metadata.title",
-      body: { metadata: { title: seriesTitle } },
+      body: { metadata: { title: renameTo } },
     },
     {
       name: "metadata.name",
-      body: { metadata: { name: seriesTitle } },
+      body: { metadata: { name: renameTo } },
     },
     {
       name: "title",
-      body: { title: seriesTitle },
+      body: { title: renameTo },
     },
     {
       name: "name",
-      body: { name: seriesTitle },
+      body: { name: renameTo },
     },
   ];
 
@@ -1399,7 +1411,7 @@ function toPositiveInteger(value) {
   return parsed;
 }
 
-function hasTitleUnexpectedError(jwResponse) {
+function hasTitleRequiredError(jwResponse) {
   if (jwResponse === null || typeof jwResponse !== "object") {
     return false;
   }
@@ -1415,7 +1427,9 @@ function hasTitleUnexpectedError(jwResponse) {
     return (
       code === "invalid_body" &&
       description.includes("title") &&
-      description.includes("unexpected")
+      (description.includes("required") ||
+        description.includes("missing") ||
+        description.includes("must be set"))
     );
   });
 }

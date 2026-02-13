@@ -4,11 +4,6 @@ const sharedApiSecretInput = document.getElementById("shared-api-secret");
 const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
 
-const singleForm = document.getElementById("single-form");
-const singleSubmitButton = document.getElementById("single-submit-btn");
-const singleStatusLine = document.getElementById("single-status-line");
-const singleResponseBox = document.getElementById("single-response-box");
-
 const bulkLinesForm = document.getElementById("bulk-lines-form");
 const bulkLinesSubmitButton = document.getElementById("bulk-lines-submit-btn");
 const bulkLinesStatusLine = document.getElementById("bulk-lines-status-line");
@@ -42,8 +37,8 @@ const seriesPlaceholderResponseBox = document.getElementById(
 
 const seriesMapForm = document.getElementById("series-map-form");
 const seriesMapSeriesIdInput = document.getElementById("series-map-series-id");
-const seriesMapSeriesTitleInput = document.getElementById(
-  "series-map-series-title"
+const seriesMapRenameLabelInput = document.getElementById(
+  "series-map-rename-label"
 );
 const seriesSeasonsContainer = document.getElementById("series-seasons-container");
 const seriesAddSeasonButton = document.getElementById("series-add-season-btn");
@@ -52,7 +47,6 @@ const seriesMapStatusLine = document.getElementById("series-map-status-line");
 const seriesMapResponseBox = document.getElementById("series-map-response-box");
 
 setupTabs();
-setupSingleUpdateForm();
 setupBulkLinesForm();
 setupBulkCsvForm();
 setupSeriesBulkCsvForm();
@@ -78,54 +72,6 @@ function setupTabs() {
         panel.hidden = !isActive;
       });
     });
-  });
-}
-
-function setupSingleUpdateForm() {
-  singleForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    try {
-      const connection = getConnectionSettings();
-      const formData = new FormData(singleForm);
-      const mediaId = String(formData.get("singleMediaId") || "").trim();
-      const title = String(formData.get("singleTitle") || "");
-      const description = String(formData.get("singleDescription") || "");
-      const customParamsInput = String(formData.get("singleCustomParams") || "");
-
-      if (!mediaId) {
-        throw new Error("Media ID is required for single updates.");
-      }
-
-      const payload = {
-        ...connection,
-        mediaId,
-        customParams: parseCustomParams(customParamsInput, {
-          requireAtLeastOne: false,
-        }),
-      };
-
-      if (title.trim()) {
-        payload.title = title;
-      }
-
-      if (description.trim()) {
-        payload.description = description;
-      }
-
-      await sendRequest({
-        url: "/api/media/update",
-        payload,
-        button: singleSubmitButton,
-        defaultButtonText: "Update metadata",
-        loadingButtonText: "Updating...",
-        statusLine: singleStatusLine,
-        responseBox: singleResponseBox,
-        onSuccessMessage: () => "Metadata updated successfully.",
-      });
-    } catch (error) {
-      showFailure(singleStatusLine, singleResponseBox, error);
-    }
   });
 }
 
@@ -312,7 +258,7 @@ function setupSeriesTools() {
       if (!seriesId) {
         throw new Error("SeriesID is required to map seasons and episodes.");
       }
-      const seriesTitle = seriesMapSeriesTitleInput.value.trim();
+      const renameTo = seriesMapRenameLabelInput.value.trim();
 
       const seasons = collectSeasonMappings();
 
@@ -321,7 +267,7 @@ function setupSeriesTools() {
         payload: {
           ...connection,
           seriesId,
-          seriesTitle,
+          renameTo,
           seasons,
         },
         button: seriesMapSubmitButton,
@@ -330,15 +276,15 @@ function setupSeriesTools() {
         statusLine: seriesMapStatusLine,
         responseBox: seriesMapResponseBox,
         onSuccessMessage: (_response, data) => {
-          const titleStatus = data?.seriesTitleUpdate?.attempted
-            ? data?.seriesTitleUpdate?.ok
-              ? " Series title updated."
-              : " Series title update failed."
+          const renameStatus = data?.seriesRenameUpdate?.attempted
+            ? data?.seriesRenameUpdate?.ok
+              ? " Series label updated."
+              : " Series label update failed."
             : "";
 
           return `Season mapping completed. ${data?.seasons?.succeeded ?? 0}/${
             data?.seasons?.total ?? 0
-          } seasons succeeded.${titleStatus}`;
+          } seasons succeeded.${renameStatus}`;
         },
       });
     } catch (error) {
@@ -535,10 +481,10 @@ function parseSeriesBulkCreateCsvRows(csvText) {
 
   const header = rows[0].map((value) => value.trim());
   const requiredHeaders = [
-    "seriesname",
+    "seriesgroup",
     "seasonnumber",
     "episodenumber",
-    "mediaid",
+    "mediaids",
   ];
 
   const headerIndexes = {};
@@ -546,13 +492,13 @@ function parseSeriesBulkCreateCsvRows(csvText) {
     const index = findCsvHeaderIndex(header, requiredHeader);
     if (index < 0) {
       throw new Error(
-        `CSV is missing required column '${requiredHeader}'. Required columns: SeriesName, SeasonNumber, EpisodeNumber, MediaID.`
+        `CSV is missing required column '${requiredHeader}'. Required columns: SeriesGroup, SeasonNumber, EpisodeNumber, MediaIDs.`
       );
     }
     headerIndexes[requiredHeader] = index;
   }
 
-  const seriesTitleIndex = findCsvHeaderIndex(header, "seriestitle");
+  const renameAfterCreateIndex = findCsvHeaderIndex(header, "renameaftercreate");
   const parsedRows = [];
 
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
@@ -562,22 +508,18 @@ function parseSeriesBulkCreateCsvRows(csvText) {
       continue;
     }
 
-    const seriesName = (row[headerIndexes.seriesname] || "").trim();
-    const mediaId = (row[headerIndexes.mediaid] || "").trim();
+    const seriesGroup = (row[headerIndexes.seriesgroup] || "").trim();
+    const mediaIdsCell = (row[headerIndexes.mediaids] || "").trim();
     const seasonNumberRaw = (row[headerIndexes.seasonnumber] || "").trim();
     const episodeNumberRaw = (row[headerIndexes.episodenumber] || "").trim();
-    const seriesTitle =
-      seriesTitleIndex >= 0 ? (row[seriesTitleIndex] || "").trim() : "";
+    const renameAfterCreate =
+      renameAfterCreateIndex >= 0 ? (row[renameAfterCreateIndex] || "").trim() : "";
 
     const seasonNumber = Number(seasonNumberRaw);
     const episodeNumber = Number(episodeNumberRaw);
 
-    if (!seriesName) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesName.`);
-    }
-
-    if (!mediaId) {
-      throw new Error(`CSV row ${rowIndex + 1} is missing MediaID.`);
+    if (!seriesGroup) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesGroup.`);
     }
 
     if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
@@ -592,12 +534,19 @@ function parseSeriesBulkCreateCsvRows(csvText) {
       );
     }
 
+    const mediaIds = splitMediaIdsCell(mediaIdsCell);
+    if (mediaIds.length === 0) {
+      throw new Error(
+        `CSV row ${rowIndex + 1} is missing MediaIDs. Add one or more IDs separated by | or ;`
+      );
+    }
+
     parsedRows.push({
-      seriesName,
-      seriesTitle,
+      seriesGroup,
+      renameAfterCreate,
       seasonNumber,
       episodeNumber,
-      mediaId,
+      mediaIds,
     });
   }
 
@@ -606,6 +555,25 @@ function parseSeriesBulkCreateCsvRows(csvText) {
   }
 
   return parsedRows;
+}
+
+function splitMediaIdsCell(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (!/[|;]/.test(value)) {
+    return [value.trim()].filter(Boolean);
+  }
+
+  return [
+    ...new Set(
+      value
+        .split(/[|;]/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 function findCsvHeaderIndex(header, expectedName) {

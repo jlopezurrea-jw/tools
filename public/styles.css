@@ -81,9 +81,11 @@ textarea {
 
 .tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-bottom: 18px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .tab-button {
@@ -95,6 +97,7 @@ textarea {
   color: #1f2937;
   background: #f8fafc;
   cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .tab-button.active {

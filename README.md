@@ -12,31 +12,27 @@ The app uses:
 
 ## Features
 
-The UI has five tabs:
+The UI has four tabs:
 
-1. **Single update**
-   - Input: Property ID, API Secret, Media ID
-   - Optional updates: `title`, `description`, `custom_params`
-
-2. **Bulk custom params (lines)**
+1. **Bulk custom params (lines)**
    - Input: Property ID, API Secret
    - Input multiple Media IDs (one per line)
    - Applies one shared custom-parameter set to all listed Media IDs
 
-3. **Bulk custom params (CSV)**
+2. **Bulk custom params (CSV)**
    - Input: Property ID, API Secret
    - Upload CSV where:
      - first column header is `MediaID`
      - remaining column headers are custom-parameter keys
      - each row updates one media item with row-specific custom-parameter values
 
-4. **Series setup**
+3. **Series setup**
    - Input: Property ID, API Secret
    - One-click placeholder series creation (returns `SeriesID`)
    - Season/episode mapping workspace
    - `+ Season` flow for adding multiple seasons with media toolboxes
 
-5. **Bulk series create (CSV)**
+4. **Bulk series create (CSV)**
    - Input: Property ID, API Secret
    - Upload one CSV file
    - Creates multiple series, their seasons, and episode mappings in one run
@@ -106,12 +102,6 @@ The server starts at:
 
 ## Tab details
 
-### Single update tab
-
-- Supports metadata update for one Media ID.
-- Includes `title`, `description`, and `custom_params`.
-- If you provide only one field, only that field is sent.
-
 ### Bulk custom params (lines) tab
 
 Media IDs input example:
@@ -158,7 +148,7 @@ This tab now uses a two-step workflow:
 
 2. **Map seasons and episodes**
    - Enter or confirm `SeriesID`
-   - Optionally enter `Series title` (applied after creation)
+   - Optionally enter `Rename label` (applied after creation)
    - Add season cards with **+ Season**
    - Left side: season number
    - Right side: MediaIDs toolbox (one MediaID per line)
@@ -169,47 +159,32 @@ This tab now uses a two-step workflow:
 
 CSV columns:
 
-- `SeriesName` (required)
-- `SeriesTitle` (optional)
+- `SeriesGroup` (required)
+- `RenameAfterCreate` (optional)
 - `SeasonNumber` (required, positive integer)
 - `EpisodeNumber` (required, positive integer)
-- `MediaID` (required)
+- `MediaIDs` (required, one or more IDs per cell)
 
-Recommended format: one row per episode.
+Recommended format: one row per episode block.
+Use `|` or `;` inside `MediaIDs` to provide multiple Media IDs in one cell.
 
 ```csv
-SeriesName,SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
-Series A,Series A Dashboard,1,1,AbCd1234
-Series A,Series A Dashboard,1,2,XyZ987ab
-Series A,Series A Dashboard,2,1,QwEr4567
-Series B,,1,1,RtYu5678
+SeriesGroup,RenameAfterCreate,SeasonNumber,EpisodeNumber,MediaIDs
+group-a,Series A Dashboard,1,1,AbCd1234|XyZ987ab
+group-a,Series A Dashboard,1,3,QwEr4567
+group-b,,1,1,RtYu5678;UiOp7890
 ```
 
 How it works:
 
-1. Groups rows by `SeriesName`.
+1. Groups rows by `SeriesGroup`.
 2. Creates each series placeholder.
-3. If `SeriesTitle` is provided, attempts to apply it to the created series.
+3. If `RenameAfterCreate` is provided, attempts to rename the created series.
 4. Creates seasons and episode mappings from the grouped rows.
 
 ---
 
 ## Payload examples
-
-Single update request payload:
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "mediaId": "AbCd1234",
-  "title": "New title",
-  "description": "New description",
-  "customParams": {
-    "department": "marketing"
-  }
-}
-```
 
 Bulk lines request payload:
 
@@ -259,7 +234,7 @@ Series mapping request payload:
   "siteId": "abc12345",
   "apiSecret": "your_secret",
   "seriesId": "Series12345",
-  "seriesTitle": "My Dashboard Series Title",
+  "renameTo": "My Dashboard Series Label",
   "seasons": [
     {
       "number": 1,
@@ -277,18 +252,18 @@ Bulk series CSV request payload (after parsing in browser):
   "apiSecret": "your_secret",
   "rows": [
     {
-      "seriesName": "Series A",
-      "seriesTitle": "Series A Dashboard",
+      "seriesGroup": "group-a",
+      "renameAfterCreate": "Series A Dashboard",
       "seasonNumber": 1,
       "episodeNumber": 1,
-      "mediaId": "AbCd1234"
+      "mediaIds": ["AbCd1234", "XyZ987ab"]
     },
     {
-      "seriesName": "Series A",
-      "seriesTitle": "Series A Dashboard",
+      "seriesGroup": "group-a",
+      "renameAfterCreate": "Series A Dashboard",
       "seasonNumber": 1,
-      "episodeNumber": 2,
-      "mediaId": "XyZ987ab"
+      "episodeNumber": 3,
+      "mediaIds": ["QwEr4567"]
     }
   ]
 }
@@ -302,7 +277,7 @@ Bulk series CSV request payload (after parsing in browser):
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
 - Series setup returns a `seriesId` plus per-season creation results.
-- If your tenant rejects `metadata.title`, the placeholder creation route
-  automatically retries with empty metadata.
-- For Step 2 series title updates, the tool automatically tries multiple
-  PATCH payload variants to match tenant schema differences.
+- Placeholder series creation starts with empty metadata and only falls back to
+  auto-title when required by tenant schema.
+- Series rename updates automatically try multiple PATCH payload variants to
+  match tenant schema differences.

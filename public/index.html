@@ -47,18 +47,9 @@
         <button
           type="button"
           class="tab-button active"
-          data-target-tab="single-tab"
-          role="tab"
-          aria-selected="true"
-        >
-          Single update
-        </button>
-        <button
-          type="button"
-          class="tab-button"
           data-target-tab="bulk-lines-tab"
           role="tab"
-          aria-selected="false"
+          aria-selected="true"
         >
           Bulk custom params (lines)
         </button>
@@ -91,64 +82,7 @@
         </button>
       </div>
 
-      <section id="single-tab" class="tab-panel active" role="tabpanel">
-        <form id="single-form" novalidate>
-          <div class="field-group">
-            <label for="single-media-id">Media ID</label>
-            <input
-              id="single-media-id"
-              name="singleMediaId"
-              type="text"
-              required
-              placeholder="XyZ987ab"
-            />
-          </div>
-
-          <div class="field-group">
-            <label for="single-title">Title (optional)</label>
-            <input
-              id="single-title"
-              name="singleTitle"
-              type="text"
-              maxlength="5000"
-              placeholder="New media title"
-            />
-          </div>
-
-          <div class="field-group">
-            <label for="single-description">Description (optional)</label>
-            <textarea
-              id="single-description"
-              name="singleDescription"
-              rows="5"
-              maxlength="25000"
-              placeholder="Updated media description"
-            ></textarea>
-          </div>
-
-          <div class="field-group">
-            <label for="single-custom-params"
-              >Custom parameters (optional, one per line as key=value)</label
-            >
-            <textarea
-              id="single-custom-params"
-              name="singleCustomParams"
-              rows="6"
-              placeholder="department=marketing&#10;campaign=winter_launch"
-            ></textarea>
-          </div>
-
-          <button type="submit" id="single-submit-btn">Update metadata</button>
-        </form>
-
-        <section class="result-section">
-          <h2>Result</h2>
-          <p id="single-status-line">No request sent yet.</p>
-          <pre id="single-response-box" aria-live="polite"></pre>
-        </section>
-      </section>
-
-      <section id="bulk-lines-tab" class="tab-panel" role="tabpanel" hidden>
+      <section id="bulk-lines-tab" class="tab-panel active" role="tabpanel">
         <form id="bulk-lines-form" novalidate>
           <div class="field-group">
             <label for="bulk-lines-media-ids"
@@ -254,17 +188,17 @@ XyZ987ab,sales,spring</pre>
               />
             </div>
             <div>
-              <label for="series-map-series-title"
-                >Series title (set after creation)</label
+              <label for="series-map-rename-label"
+                >Rename label (after create)</label
               >
               <input
-                id="series-map-series-title"
-                name="seriesMapSeriesTitle"
+                id="series-map-rename-label"
+                name="seriesMapRenameLabel"
                 type="text"
-                placeholder="Series title for dashboard"
+                placeholder="Optional label after series exists"
               />
               <p class="hint">
-                Optional. The tool will try supported title update formats for
+                Optional. The tool will try supported rename formats for
                 your tenant before mapping seasons.
               </p>
             </div>
@@ -305,16 +239,15 @@ XyZ987ab,sales,spring</pre>
               required
             />
             <p class="hint">
-              CSV columns (required): <strong>SeriesName</strong>,
+              CSV columns (required): <strong>SeriesGroup</strong>,
               <strong>SeasonNumber</strong>, <strong>EpisodeNumber</strong>,
-              <strong>MediaID</strong>. Optional:
-              <strong>SeriesTitle</strong>.
+              <strong>MediaIDs</strong>. Optional:
+              <strong>RenameAfterCreate</strong>.
             </p>
-            <pre class="format-example">SeriesName,SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
-Series A,Series A Dashboard,1,1,AbCd1234
-Series A,Series A Dashboard,1,2,XyZ987ab
-Series A,Series A Dashboard,2,1,QwEr4567
-Series B,,1,1,RtYu5678</pre>
+            <pre class="format-example">SeriesGroup,RenameAfterCreate,SeasonNumber,EpisodeNumber,MediaIDs
+group-a,Series A Dashboard,1,1,AbCd1234|XyZ987ab
+group-a,Series A Dashboard,1,3,QwEr4567
+group-b,,1,1,RtYu5678;UiOp7890</pre>
           </div>
 
           <button type="submit" id="series-bulk-csv-submit-btn">
