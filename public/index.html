@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JWX Metadata Updater</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>JWX Metadata Updater</h1>
+      <p class="intro">
+        Update media metadata through the JW Platform Management API. Your API
+        secret stays on the server.
+      </p>
+
+      <form id="metadata-form" novalidate>
+        <div class="field-group">
+          <label for="siteId">Property ID (site_id)</label>
+          <input
+            id="siteId"
+            name="siteId"
+            type="text"
+            required
+            placeholder="abc12345"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="mediaId">Media ID</label>
+          <input
+            id="mediaId"
+            name="mediaId"
+            type="text"
+            required
+            placeholder="XyZ987ab"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="title">Title (optional)</label>
+          <input
+            id="title"
+            name="title"
+            type="text"
+            maxlength="5000"
+            placeholder="New media title"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="description">Description (optional)</label>
+          <textarea
+            id="description"
+            name="description"
+            rows="5"
+            maxlength="25000"
+            placeholder="Updated media description"
+          ></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="customParams"
+            >Custom parameters (optional, one per line as key=value)</label
+          >
+          <textarea
+            id="customParams"
+            name="customParams"
+            rows="6"
+            placeholder="department=marketing&#10;campaign=winter_launch"
+          ></textarea>
+        </div>
+
+        <button type="submit" id="submit-btn">Update metadata</button>
+      </form>
+
+      <section class="result-section">
+        <h2>Result</h2>
+        <p id="status-line">No request sent yet.</p>
+        <pre id="response-box" aria-live="polite"></pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
