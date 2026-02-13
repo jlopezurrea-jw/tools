@@ -80,6 +80,15 @@
         >
           Series setup
         </button>
+        <button
+          type="button"
+          class="tab-button"
+          data-target-tab="series-bulk-csv-tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Bulk series create (CSV)
+        </button>
       </div>
 
       <section id="single-tab" class="tab-panel active" role="tabpanel">
@@ -281,6 +290,42 @@ XyZ987ab,sales,spring</pre>
           <h2>Result</h2>
           <p id="series-map-status-line">No request sent yet.</p>
           <pre id="series-map-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <section id="series-bulk-csv-tab" class="tab-panel" role="tabpanel" hidden>
+        <form id="series-bulk-csv-form" novalidate>
+          <div class="field-group">
+            <label for="series-bulk-csv-file">Upload CSV file</label>
+            <input
+              id="series-bulk-csv-file"
+              name="seriesBulkCsvFile"
+              type="file"
+              accept=".csv,text/csv"
+              required
+            />
+            <p class="hint">
+              CSV columns (required): <strong>SeriesName</strong>,
+              <strong>SeasonNumber</strong>, <strong>EpisodeNumber</strong>,
+              <strong>MediaID</strong>. Optional:
+              <strong>SeriesTitle</strong>.
+            </p>
+            <pre class="format-example">SeriesName,SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
+Series A,Series A Dashboard,1,1,AbCd1234
+Series A,Series A Dashboard,1,2,XyZ987ab
+Series A,Series A Dashboard,2,1,QwEr4567
+Series B,,1,1,RtYu5678</pre>
+          </div>
+
+          <button type="submit" id="series-bulk-csv-submit-btn">
+            Run bulk series creation
+          </button>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="series-bulk-csv-status-line">No request sent yet.</p>
+          <pre id="series-bulk-csv-response-box" aria-live="polite"></pre>
         </section>
       </section>
     </main>

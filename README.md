@@ -12,7 +12,7 @@ The app uses:
 
 ## Features
 
-The UI has four tabs:
+The UI has five tabs:
 
 1. **Single update**
    - Input: Property ID, API Secret, Media ID
@@ -35,6 +35,11 @@ The UI has four tabs:
    - One-click placeholder series creation (returns `SeriesID`)
    - Season/episode mapping workspace
    - `+ Season` flow for adding multiple seasons with media toolboxes
+
+5. **Bulk series create (CSV)**
+   - Input: Property ID, API Secret
+   - Upload one CSV file
+   - Creates multiple series, their seasons, and episode mappings in one run
 
 ---
 
@@ -160,6 +165,33 @@ This tab now uses a two-step workflow:
    - Episode numbers are assigned automatically by line order
      (`line 1 = episode 1`, `line 2 = episode 2`, etc.)
 
+### Bulk series create (CSV) tab
+
+CSV columns:
+
+- `SeriesName` (required)
+- `SeriesTitle` (optional)
+- `SeasonNumber` (required, positive integer)
+- `EpisodeNumber` (required, positive integer)
+- `MediaID` (required)
+
+Recommended format: one row per episode.
+
+```csv
+SeriesName,SeriesTitle,SeasonNumber,EpisodeNumber,MediaID
+Series A,Series A Dashboard,1,1,AbCd1234
+Series A,Series A Dashboard,1,2,XyZ987ab
+Series A,Series A Dashboard,2,1,QwEr4567
+Series B,,1,1,RtYu5678
+```
+
+How it works:
+
+1. Groups rows by `SeriesName`.
+2. Creates each series placeholder.
+3. If `SeriesTitle` is provided, attempts to apply it to the created series.
+4. Creates seasons and episode mappings from the grouped rows.
+
 ---
 
 ## Payload examples
@@ -232,6 +264,31 @@ Series mapping request payload:
     {
       "number": 1,
       "mediaIds": ["AbCd1234", "XyZ987ab", "QwEr4567"]
+    }
+  ]
+}
+```
+
+Bulk series CSV request payload (after parsing in browser):
+
+```json
+{
+  "siteId": "abc12345",
+  "apiSecret": "your_secret",
+  "rows": [
+    {
+      "seriesName": "Series A",
+      "seriesTitle": "Series A Dashboard",
+      "seasonNumber": 1,
+      "episodeNumber": 1,
+      "mediaId": "AbCd1234"
+    },
+    {
+      "seriesName": "Series A",
+      "seriesTitle": "Series A Dashboard",
+      "seasonNumber": 1,
+      "episodeNumber": 2,
+      "mediaId": "XyZ987ab"
     }
   ]
 }

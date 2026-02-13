@@ -19,6 +19,17 @@ const bulkCsvSubmitButton = document.getElementById("bulk-csv-submit-btn");
 const bulkCsvStatusLine = document.getElementById("bulk-csv-status-line");
 const bulkCsvResponseBox = document.getElementById("bulk-csv-response-box");
 
+const seriesBulkCsvForm = document.getElementById("series-bulk-csv-form");
+const seriesBulkCsvSubmitButton = document.getElementById(
+  "series-bulk-csv-submit-btn"
+);
+const seriesBulkCsvStatusLine = document.getElementById(
+  "series-bulk-csv-status-line"
+);
+const seriesBulkCsvResponseBox = document.getElementById(
+  "series-bulk-csv-response-box"
+);
+
 const seriesCreatePlaceholderButton = document.getElementById(
   "series-create-placeholder-btn"
 );
@@ -44,6 +55,7 @@ setupTabs();
 setupSingleUpdateForm();
 setupBulkLinesForm();
 setupBulkCsvForm();
+setupSeriesBulkCsvForm();
 setupSeriesTools();
 
 function setupTabs() {
@@ -188,6 +200,43 @@ function setupBulkCsvForm() {
       });
     } catch (error) {
       showFailure(bulkCsvStatusLine, bulkCsvResponseBox, error);
+    }
+  });
+}
+
+function setupSeriesBulkCsvForm() {
+  seriesBulkCsvForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    try {
+      const connection = getConnectionSettings();
+      const formData = new FormData(seriesBulkCsvForm);
+      const file = formData.get("seriesBulkCsvFile");
+      if (!(file instanceof File) || file.size === 0) {
+        throw new Error("Choose a CSV file before running bulk series creation.");
+      }
+
+      const csvText = await file.text();
+      const rows = parseSeriesBulkCreateCsvRows(csvText);
+
+      await sendRequest({
+        url: "/api/series/bulk-create-csv",
+        payload: {
+          ...connection,
+          rows,
+        },
+        button: seriesBulkCsvSubmitButton,
+        defaultButtonText: "Run bulk series creation",
+        loadingButtonText: "Creating series in bulk...",
+        statusLine: seriesBulkCsvStatusLine,
+        responseBox: seriesBulkCsvResponseBox,
+        onSuccessMessage: (_response, data) =>
+          `Bulk series creation completed. ${data?.fullySucceeded ?? 0}/${
+            data?.totalSeries ?? 0
+          } series fully succeeded.`,
+      });
+    } catch (error) {
+      showFailure(seriesBulkCsvStatusLine, seriesBulkCsvResponseBox, error);
     }
   });
 }
@@ -476,6 +525,102 @@ function parseCustomParams(input, { requireAtLeastOne }) {
   }
 
   return result;
+}
+
+function parseSeriesBulkCreateCsvRows(csvText) {
+  const rows = parseCsvRows(csvText);
+  if (rows.length < 2) {
+    throw new Error("CSV file must include a header row and at least one data row.");
+  }
+
+  const header = rows[0].map((value) => value.trim());
+  const requiredHeaders = [
+    "seriesname",
+    "seasonnumber",
+    "episodenumber",
+    "mediaid",
+  ];
+
+  const headerIndexes = {};
+  for (const requiredHeader of requiredHeaders) {
+    const index = findCsvHeaderIndex(header, requiredHeader);
+    if (index < 0) {
+      throw new Error(
+        `CSV is missing required column '${requiredHeader}'. Required columns: SeriesName, SeasonNumber, EpisodeNumber, MediaID.`
+      );
+    }
+    headerIndexes[requiredHeader] = index;
+  }
+
+  const seriesTitleIndex = findCsvHeaderIndex(header, "seriestitle");
+  const parsedRows = [];
+
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const rowIsEmpty = row.every((cell) => cell.trim() === "");
+    if (rowIsEmpty) {
+      continue;
+    }
+
+    const seriesName = (row[headerIndexes.seriesname] || "").trim();
+    const mediaId = (row[headerIndexes.mediaid] || "").trim();
+    const seasonNumberRaw = (row[headerIndexes.seasonnumber] || "").trim();
+    const episodeNumberRaw = (row[headerIndexes.episodenumber] || "").trim();
+    const seriesTitle =
+      seriesTitleIndex >= 0 ? (row[seriesTitleIndex] || "").trim() : "";
+
+    const seasonNumber = Number(seasonNumberRaw);
+    const episodeNumber = Number(episodeNumberRaw);
+
+    if (!seriesName) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing SeriesName.`);
+    }
+
+    if (!mediaId) {
+      throw new Error(`CSV row ${rowIndex + 1} is missing MediaID.`);
+    }
+
+    if (!Number.isInteger(seasonNumber) || seasonNumber <= 0) {
+      throw new Error(
+        `CSV row ${rowIndex + 1} has invalid SeasonNumber. Use a positive integer.`
+      );
+    }
+
+    if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) {
+      throw new Error(
+        `CSV row ${rowIndex + 1} has invalid EpisodeNumber. Use a positive integer.`
+      );
+    }
+
+    parsedRows.push({
+      seriesName,
+      seriesTitle,
+      seasonNumber,
+      episodeNumber,
+      mediaId,
+    });
+  }
+
+  if (parsedRows.length === 0) {
+    throw new Error("CSV does not contain any valid series rows.");
+  }
+
+  return parsedRows;
+}
+
+function findCsvHeaderIndex(header, expectedName) {
+  const normalizedExpected = normalizeCsvHeader(expectedName);
+  for (let i = 0; i < header.length; i += 1) {
+    if (normalizeCsvHeader(header[i]) === normalizedExpected) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+function normalizeCsvHeader(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function parseCsvUpdates(csvText) {
