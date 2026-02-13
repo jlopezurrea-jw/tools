@@ -30,6 +30,12 @@ The UI has three tabs:
      - remaining column headers are custom-parameter keys
      - each row updates one media item with row-specific custom-parameter values
 
+4. **Series setup**
+   - Input: Property ID, API Secret
+   - Create a new series
+   - Define seasons
+   - Define episode mappings (Media IDs with episode numbers) for each season
+
 ---
 
 ## Prerequisites
@@ -136,6 +142,37 @@ QwEr4567,finance,q1,team-b
 - Empty custom-parameter cells are ignored.
 - Rows without custom-parameter values are skipped.
 
+### Series setup tab
+
+This tab creates a series and then creates each provided season under that
+series, including episode assignments.
+
+Required fields:
+
+- `seriesTitle`
+- `seasons` JSON array
+
+Season JSON shape:
+
+```json
+[
+  {
+    "number": 1,
+    "title": "Season 1",
+    "description": "Optional text",
+    "episodes": [
+      { "mediaId": "AbCd1234", "episodeNumber": 1 },
+      { "mediaId": "XyZ987ab", "episodeNumber": 2 }
+    ]
+  }
+]
+```
+
+Sort options (optional):
+
+- `sort.season`: `asc` or `dsc`
+- `sort.episode`: `asc` or `dsc`
+
 ---
 
 ## Payload examples
@@ -187,6 +224,31 @@ Bulk CSV request payload (after parsing in browser):
 }
 ```
 
+Series setup request payload:
+
+```json
+{
+  "siteId": "abc12345",
+  "apiSecret": "your_secret",
+  "seriesTitle": "My New Series",
+  "sort": {
+    "season": "asc",
+    "episode": "asc"
+  },
+  "seasons": [
+    {
+      "number": 1,
+      "title": "Season 1",
+      "description": "Optional",
+      "episodes": [
+        { "mediaId": "AbCd1234", "episodeNumber": 1 },
+        { "mediaId": "XyZ987ab", "episodeNumber": 2 }
+      ]
+    }
+  ]
+}
+```
+
 ---
 
 ## Notes
@@ -194,3 +256,4 @@ Bulk CSV request payload (after parsing in browser):
 - The backend validates required IDs and metadata limits before calling JW APIs.
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
+- Series setup returns a `seriesId` plus per-season creation results.

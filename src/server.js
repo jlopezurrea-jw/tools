@@ -241,6 +241,148 @@ app.post("/api/media/bulk-custom-csv", async (req, res) => {
   });
 });
 
+app.post("/api/series/create-with-seasons", async (req, res) => {
+  const {
+    siteId,
+    apiSecret,
+    seriesTitle,
+    sort = {},
+    seasons = [],
+  } = req.body || {};
+
+  const commonError = getSiteAndSecretValidationError(siteId, apiSecret);
+  if (commonError) {
+    return res.status(400).json({
+      ok: false,
+      error: commonError,
+    });
+  }
+
+  if (!isNonEmptyString(seriesTitle)) {
+    return res.status(400).json({
+      ok: false,
+      error: "seriesTitle is required.",
+    });
+  }
+
+  const sortResult = normalizeSeriesSort(sort);
+  if (sortResult.error) {
+    return res.status(400).json({
+      ok: false,
+      error: sortResult.error,
+    });
+  }
+
+  const seasonsResult = normalizeSeriesSeasons(seasons);
+  if (seasonsResult.error) {
+    return res.status(400).json({
+      ok: false,
+      error: seasonsResult.error,
+    });
+  }
+  const normalizedSeasons = seasonsResult.seasons;
+
+  const seriesMetadata = { title: seriesTitle.trim() };
+  if (Object.keys(sortResult.sort).length > 0) {
+    seriesMetadata.sort = sortResult.sort;
+  }
+
+  let createdSeries;
+  try {
+    createdSeries = await createSeries({
+      siteId: siteId.trim(),
+      apiSecret: apiSecret.trim(),
+      metadata: seriesMetadata,
+    });
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      error:
+        "Unable to reach JW Platform API while creating the series. Verify your network and retry.",
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const seriesId = extractResourceId(createdSeries.jwResponse);
+  if (!createdSeries.ok || !seriesId) {
+    return res.status(createdSeries.jwStatus).json({
+      ok: false,
+      mode: "series-create-with-seasons",
+      series: {
+        ok: createdSeries.ok,
+        jwStatus: createdSeries.jwStatus,
+        endpoint: createdSeries.endpoint,
+        request: { metadata: seriesMetadata },
+        seriesId: seriesId || null,
+        jwResponse: createdSeries.jwResponse,
+      },
+      seasons: {
+        total: normalizedSeasons.length,
+        succeeded: 0,
+        failed: normalizedSeasons.length,
+        results: [],
+      },
+    });
+  }
+
+  const seasonResults = [];
+  for (const season of normalizedSeasons) {
+    try {
+      const createdSeason = await createSeason({
+        siteId: siteId.trim(),
+        apiSecret: apiSecret.trim(),
+        seriesId,
+        season,
+      });
+
+      seasonResults.push({
+        seasonNumber: season.number,
+        ok: createdSeason.ok,
+        jwStatus: createdSeason.jwStatus,
+        endpoint: createdSeason.endpoint,
+        request: {
+          metadata: season.metadata,
+          relationships: season.relationships,
+        },
+        seasonId: extractResourceId(createdSeason.jwResponse),
+        jwResponse: createdSeason.jwResponse,
+      });
+    } catch (error) {
+      seasonResults.push({
+        seasonNumber: season.number,
+        ok: false,
+        jwStatus: 502,
+        error:
+          "Unable to reach JW Platform API while creating the season. Verify your network and retry.",
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const seasonSucceeded = seasonResults.filter((result) => result.ok).length;
+  const seasonFailed = seasonResults.length - seasonSucceeded;
+  const statusCode = seasonFailed === 0 ? 201 : 207;
+
+  return res.status(statusCode).json({
+    ok: seasonFailed === 0,
+    mode: "series-create-with-seasons",
+    series: {
+      ok: createdSeries.ok,
+      jwStatus: createdSeries.jwStatus,
+      endpoint: createdSeries.endpoint,
+      request: { metadata: seriesMetadata },
+      seriesId,
+      jwResponse: createdSeries.jwResponse,
+    },
+    seasons: {
+      total: seasonResults.length,
+      succeeded: seasonSucceeded,
+      failed: seasonFailed,
+      results: seasonResults,
+    },
+  });
+});
+
 app.listen(port, () => {
   console.log(`JWX metadata tool running on http://localhost:${port}`);
 });
@@ -352,6 +494,140 @@ function normalizeCustomParams(customParams, { requireAtLeastOne }) {
   return { customParams: normalizedCustomParams };
 }
 
+function normalizeSeriesSort(sort) {
+  if (sort === null || sort === undefined) {
+    return { sort: {} };
+  }
+
+  if (typeof sort !== "object" || Array.isArray(sort)) {
+    return { error: "sort must be an object with optional season/episode keys." };
+  }
+
+  const allowedValues = new Set(["asc", "dsc"]);
+  const normalizedSort = {};
+
+  if (sort.season !== undefined) {
+    if (typeof sort.season !== "string" || !allowedValues.has(sort.season.trim())) {
+      return { error: "sort.season must be either 'asc' or 'dsc'." };
+    }
+    normalizedSort.season = sort.season.trim();
+  }
+
+  if (sort.episode !== undefined) {
+    if (
+      typeof sort.episode !== "string" ||
+      !allowedValues.has(sort.episode.trim())
+    ) {
+      return { error: "sort.episode must be either 'asc' or 'dsc'." };
+    }
+    normalizedSort.episode = sort.episode.trim();
+  }
+
+  return { sort: normalizedSort };
+}
+
+function normalizeSeriesSeasons(seasons) {
+  if (!Array.isArray(seasons)) {
+    return { error: "seasons must be an array." };
+  }
+
+  if (seasons.length === 0) {
+    return { error: "At least one season definition is required." };
+  }
+
+  if (seasons.length > MAX_BULK_ITEMS) {
+    return { error: `Maximum ${MAX_BULK_ITEMS} seasons per request.` };
+  }
+
+  const normalizedSeasons = [];
+  for (let seasonIndex = 0; seasonIndex < seasons.length; seasonIndex += 1) {
+    const season = seasons[seasonIndex];
+    if (season === null || typeof season !== "object" || Array.isArray(season)) {
+      return { error: `seasons[${seasonIndex}] must be an object.` };
+    }
+
+    const number = Number.parseInt(String(season.number), 10);
+    if (!Number.isFinite(number) || number <= 0) {
+      return { error: `seasons[${seasonIndex}].number must be a positive integer.` };
+    }
+
+    const metadata = { number };
+    if (season.title !== undefined) {
+      if (typeof season.title !== "string") {
+        return { error: `seasons[${seasonIndex}].title must be a string.` };
+      }
+      const title = season.title.trim();
+      if (title) {
+        metadata.title = title;
+      }
+    }
+
+    if (season.description !== undefined) {
+      if (typeof season.description !== "string") {
+        return { error: `seasons[${seasonIndex}].description must be a string.` };
+      }
+      const description = season.description.trim();
+      if (description) {
+        metadata.description = description;
+      }
+    }
+
+    if (!Array.isArray(season.episodes) || season.episodes.length === 0) {
+      return {
+        error: `seasons[${seasonIndex}].episodes must be a non-empty array.`,
+      };
+    }
+
+    const media = [];
+    const usedEpisodeNumbers = new Set();
+    for (let episodeIndex = 0; episodeIndex < season.episodes.length; episodeIndex += 1) {
+      const episode = season.episodes[episodeIndex];
+      if (
+        episode === null ||
+        typeof episode !== "object" ||
+        Array.isArray(episode)
+      ) {
+        return {
+          error: `seasons[${seasonIndex}].episodes[${episodeIndex}] must be an object.`,
+        };
+      }
+
+      if (!isNonEmptyString(episode.mediaId)) {
+        return {
+          error: `seasons[${seasonIndex}].episodes[${episodeIndex}].mediaId is required.`,
+        };
+      }
+
+      const episodeNumber = Number.parseInt(String(episode.episodeNumber), 10);
+      if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+        return {
+          error: `seasons[${seasonIndex}].episodes[${episodeIndex}].episodeNumber must be a positive integer.`,
+        };
+      }
+
+      if (usedEpisodeNumbers.has(episodeNumber)) {
+        return {
+          error: `seasons[${seasonIndex}] contains duplicate episodeNumber ${episodeNumber}.`,
+        };
+      }
+      usedEpisodeNumbers.add(episodeNumber);
+
+      media.push({
+        id: episode.mediaId.trim(),
+        episode_number: episodeNumber,
+      });
+    }
+
+    normalizedSeasons.push({
+      number,
+      metadata,
+      relationships: { media },
+    });
+  }
+
+  return { seasons: normalizedSeasons };
+}
+
 async function runBulkUpdate({ siteId, apiSecret, items }) {
   const results = [];
 
@@ -398,22 +674,72 @@ async function updateMedia({ siteId, apiSecret, mediaId, metadata }) {
     siteId
   )}/media/${encodeURIComponent(mediaId)}/`;
 
-  const jwResponse = await fetch(endpoint, {
+  return jwRequest({
+    endpoint,
     method: "PATCH",
+    apiSecret,
+    body: { metadata },
+  });
+}
+
+async function createSeries({ siteId, apiSecret, metadata }) {
+  const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+    siteId
+  )}/series/`;
+
+  return jwRequest({
+    endpoint,
+    method: "POST",
+    apiSecret,
+    body: { metadata },
+  });
+}
+
+async function createSeason({ siteId, apiSecret, seriesId, season }) {
+  const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+    siteId
+  )}/series/${encodeURIComponent(seriesId)}/seasons/`;
+
+  return jwRequest({
+    endpoint,
+    method: "POST",
+    apiSecret,
+    body: {
+      metadata: season.metadata,
+      relationships: season.relationships,
+    },
+  });
+}
+
+function extractResourceId(payload) {
+  if (payload === null || payload === undefined) {
+    return null;
+  }
+
+  if (typeof payload === "object" && isNonEmptyString(payload.id)) {
+    return payload.id.trim();
+  }
+
+  return null;
+}
+
+async function jwRequest({ endpoint, method, apiSecret, body }) {
+  const jwResponse = await fetch(endpoint, {
+    method,
     headers: {
       Authorization: `Bearer ${apiSecret}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ metadata }),
+    body: JSON.stringify(body),
   });
 
-  const responseBody = await parseResponseBody(jwResponse);
+  const jwResponseBody = await parseResponseBody(jwResponse);
   return {
     ok: jwResponse.ok,
     jwStatus: jwResponse.status,
     endpoint,
-    jwResponse: responseBody,
+    jwResponse: jwResponseBody,
   };
 }
 

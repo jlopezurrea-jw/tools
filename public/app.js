@@ -19,10 +19,16 @@ const bulkCsvSubmitButton = document.getElementById("bulk-csv-submit-btn");
 const bulkCsvStatusLine = document.getElementById("bulk-csv-status-line");
 const bulkCsvResponseBox = document.getElementById("bulk-csv-response-box");
 
+const seriesForm = document.getElementById("series-form");
+const seriesSubmitButton = document.getElementById("series-submit-btn");
+const seriesStatusLine = document.getElementById("series-status-line");
+const seriesResponseBox = document.getElementById("series-response-box");
+
 setupTabs();
 setupSingleUpdateForm();
 setupBulkLinesForm();
 setupBulkCsvForm();
+setupSeriesForm();
 
 function setupTabs() {
   tabButtons.forEach((button) => {
@@ -170,6 +176,60 @@ function setupBulkCsvForm() {
   });
 }
 
+function setupSeriesForm() {
+  seriesForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    try {
+      const connection = getConnectionSettings();
+      const formData = new FormData(seriesForm);
+      const seriesTitle = String(formData.get("seriesTitle") || "").trim();
+      const seriesSeasonSort = String(formData.get("seriesSeasonSort") || "").trim();
+      const seriesEpisodeSort = String(
+        formData.get("seriesEpisodeSort") || ""
+      ).trim();
+      const seasonsJsonInput = String(formData.get("seriesSeasonsJson") || "");
+
+      if (!seriesTitle) {
+        throw new Error("Series title is required.");
+      }
+
+      const sort = {};
+      if (seriesSeasonSort) {
+        sort.season = seriesSeasonSort;
+      }
+      if (seriesEpisodeSort) {
+        sort.episode = seriesEpisodeSort;
+      }
+
+      const seasons = parseSeriesSeasonsJson(seasonsJsonInput);
+
+      await sendRequest({
+        url: "/api/series/create-with-seasons",
+        payload: {
+          ...connection,
+          seriesTitle,
+          sort,
+          seasons,
+        },
+        button: seriesSubmitButton,
+        defaultButtonText: "Create series and seasons",
+        loadingButtonText: "Creating series...",
+        statusLine: seriesStatusLine,
+        responseBox: seriesResponseBox,
+        onSuccessMessage: (_response, data) => {
+          const seriesId = data?.series?.seriesId || "(unknown)";
+          const succeeded = data?.seasons?.succeeded ?? 0;
+          const total = data?.seasons?.total ?? 0;
+          return `Series created (${seriesId}). Seasons created: ${succeeded}/${total}.`;
+        },
+      });
+    } catch (error) {
+      showFailure(seriesStatusLine, seriesResponseBox, error);
+    }
+  });
+}
+
 function getConnectionSettings() {
   const siteId = sharedSiteIdInput.value.trim();
   const apiSecret = sharedApiSecretInput.value.trim();
@@ -227,6 +287,102 @@ function parseCustomParams(input, { requireAtLeastOne }) {
   }
 
   return result;
+}
+
+function parseSeriesSeasonsJson(input) {
+  if (!input.trim()) {
+    throw new Error("Seasons JSON is required.");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    throw new Error("Seasons JSON is invalid. Verify the JSON format.");
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("Seasons JSON must be a non-empty array.");
+  }
+
+  return parsed.map((season, seasonIndex) => {
+    if (season === null || typeof season !== "object" || Array.isArray(season)) {
+      throw new Error(`Season ${seasonIndex + 1} must be an object.`);
+    }
+
+    const normalizedSeason = {};
+    const number = Number(season.number);
+    if (!Number.isFinite(number) || number <= 0) {
+      throw new Error(
+        `Season ${seasonIndex + 1} must include a positive number value.`
+      );
+    }
+    normalizedSeason.number = number;
+
+    if (season.title !== undefined) {
+      if (typeof season.title !== "string") {
+        throw new Error(`Season ${seasonIndex + 1} title must be a string.`);
+      }
+      const title = season.title.trim();
+      if (title) {
+        normalizedSeason.title = title;
+      }
+    }
+
+    if (season.description !== undefined) {
+      if (typeof season.description !== "string") {
+        throw new Error(
+          `Season ${seasonIndex + 1} description must be a string.`
+        );
+      }
+      const description = season.description.trim();
+      if (description) {
+        normalizedSeason.description = description;
+      }
+    }
+
+    if (!Array.isArray(season.episodes) || season.episodes.length === 0) {
+      throw new Error(
+        `Season ${seasonIndex + 1} must include a non-empty episodes array.`
+      );
+    }
+
+    normalizedSeason.episodes = season.episodes.map((episode, episodeIndex) => {
+      if (
+        episode === null ||
+        typeof episode !== "object" ||
+        Array.isArray(episode)
+      ) {
+        throw new Error(
+          `Season ${seasonIndex + 1}, episode ${
+            episodeIndex + 1
+          } must be an object.`
+        );
+      }
+
+      const mediaId = String(episode.mediaId || "").trim();
+      if (!mediaId) {
+        throw new Error(
+          `Season ${seasonIndex + 1}, episode ${
+            episodeIndex + 1
+          } must include mediaId.`
+        );
+      }
+
+      const episodeNumber = Number(episode.episodeNumber);
+      if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+        throw new Error(
+          `Season ${seasonIndex + 1}, episode ${
+            episodeIndex + 1
+          } must include a positive episodeNumber.`
+        );
+      }
+
+      return { mediaId, episodeNumber };
+    });
+
+    return normalizedSeason;
+  });
 }
 
 function parseCsvUpdates(csvText) {

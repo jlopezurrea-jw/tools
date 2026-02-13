@@ -54,6 +54,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #cbd5e1;
@@ -64,6 +65,12 @@ textarea {
 
 textarea {
   resize: vertical;
+}
+
+.row-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
 }
 
 .hint {

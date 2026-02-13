@@ -71,6 +71,15 @@
         >
           Bulk custom params (CSV)
         </button>
+        <button
+          type="button"
+          class="tab-button"
+          data-target-tab="series-tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Series setup
+        </button>
       </div>
 
       <section id="single-tab" class="tab-panel active" role="tabpanel">
@@ -197,6 +206,83 @@ XyZ987ab,sales,spring</pre>
           <h2>Result</h2>
           <p id="bulk-csv-status-line">No request sent yet.</p>
           <pre id="bulk-csv-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <section id="series-tab" class="tab-panel" role="tabpanel" hidden>
+        <form id="series-form" novalidate>
+          <div class="field-group">
+            <label for="series-title">Series title</label>
+            <input
+              id="series-title"
+              name="seriesTitle"
+              type="text"
+              required
+              placeholder="My New Series"
+            />
+          </div>
+
+          <div class="field-group row-fields">
+            <div>
+              <label for="series-season-sort">Season sort (optional)</label>
+              <select id="series-season-sort" name="seriesSeasonSort">
+                <option value="">Default</option>
+                <option value="asc">asc</option>
+                <option value="dsc">dsc</option>
+              </select>
+            </div>
+            <div>
+              <label for="series-episode-sort">Episode sort (optional)</label>
+              <select id="series-episode-sort" name="seriesEpisodeSort">
+                <option value="">Default</option>
+                <option value="asc">asc</option>
+                <option value="dsc">dsc</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label for="series-seasons-json">
+              Seasons and episodes JSON (required)
+            </label>
+            <textarea
+              id="series-seasons-json"
+              name="seriesSeasonsJson"
+              rows="12"
+              placeholder='[
+  {
+    "number": 1,
+    "title": "Season 1",
+    "description": "Optional season description",
+    "episodes": [
+      { "mediaId": "AbCd1234", "episodeNumber": 1 },
+      { "mediaId": "XyZ987ab", "episodeNumber": 2 }
+    ]
+  },
+  {
+    "number": 2,
+    "episodes": [
+      { "mediaId": "QwEr4567", "episodeNumber": 1 }
+    ]
+  }
+]'
+            ></textarea>
+            <p class="hint">
+              Each season needs a <strong>number</strong> and an
+              <strong>episodes</strong> array. Each episode requires
+              <strong>mediaId</strong> and <strong>episodeNumber</strong>.
+            </p>
+          </div>
+
+          <button type="submit" id="series-submit-btn">
+            Create series and seasons
+          </button>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="series-status-line">No request sent yet.</p>
+          <pre id="series-response-box" aria-live="polite"></pre>
         </section>
       </section>
     </main>
