@@ -149,6 +149,7 @@ This tab now uses a two-step workflow:
 2. **Map seasons and episodes**
    - Enter or confirm `SeriesID`
    - Optional: set `Series Title` for the series dashboard label
+   - Title update runs after create/map and includes media-title fallback for dashboard visibility
    - Add season cards with **+ Season**
    - Left side: season number and optional season title
    - Right side: Media toolbox using `MediaID` (one per line)
@@ -179,8 +180,9 @@ Nature Stories,Origins,1,1,RtYu5678;UiOp7890
 How it works:
 
 1. Groups CSV rows by `Series Title`.
-2. Creates a placeholder series per group and renames it to `Series Title`.
-3. Creates seasons and episode mappings from each grouped row set.
+2. Creates a placeholder series per group.
+3. Applies `Series Title` after creation (series endpoint first, then media endpoint fallback).
+4. Creates seasons and episode mappings from each grouped row set.
 
 ---
 
@@ -279,6 +281,8 @@ Bulk series CSV request payload (after parsing in browser):
 - API responses include per-item status/results for bulk operations.
 - Series setup returns a `seriesId` plus per-season creation results.
 - Series flows support series title updates via `seriesTitle` (`Series Title` in CSV).
+- If the series endpoint does not reflect the title in dashboard, the backend also
+  updates the linked media item title as a fallback.
 - Placeholder series creation starts with empty metadata and only falls back to
   auto-title when required by tenant schema.
 - CSV parser also accepts older aliases (`MediaIDs` column name) for
