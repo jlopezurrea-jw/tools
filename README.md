@@ -105,7 +105,8 @@ The server starts at:
 
 - Supports metadata update for one Media ID.
 - Includes `title`, `description`, and `custom_params`.
-- If you provide only one field, only that field is sent.
+- Additive behavior: existing values are preserved.
+- Example: if title already exists, sending a new title will **not** overwrite it.
 
 ### Bulk custom params (lines) tab
 
@@ -126,6 +127,8 @@ owner=content-ops
 ```
 
 All listed Media IDs receive the same `custom_params` payload.
+- Additive behavior: only missing custom-parameter keys are added.
+- Existing keys/values are left untouched.
 
 ### Bulk custom params (CSV) tab
 
@@ -141,6 +144,7 @@ QwEr4567,finance,q1,team-b
 - `MediaID` is required in each row.
 - Empty custom-parameter cells are ignored.
 - Rows without custom-parameter values are skipped.
+- Additive behavior: existing custom-parameter keys are preserved.
 
 ### Series setup tab
 
@@ -244,6 +248,8 @@ Series mapping request payload:
 - The backend validates required IDs and metadata limits before calling JW APIs.
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
+- Metadata updater endpoints are additive-only: they fetch current metadata first
+  and only add missing fields/keys.
 - Series setup returns a `seriesId` plus per-season creation results.
 - If your tenant rejects `metadata.title`, the placeholder creation route
   automatically retries with empty metadata.

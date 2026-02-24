@@ -67,18 +67,51 @@ app.post("/api/media/update", async (req, res) => {
   }
 
   try {
+    const additiveMetadataResult = await resolveAdditiveMediaMetadata({
+      siteId: siteId.trim(),
+      apiSecret: apiSecret.trim(),
+      mediaId: mediaId.trim(),
+      incomingMetadata: metadata,
+    });
+
+    if (additiveMetadataResult.error) {
+      return res.status(additiveMetadataResult.jwStatus || 502).json({
+        ok: false,
+        error:
+          additiveMetadataResult.error ||
+          "Unable to load existing media metadata before update.",
+        mediaLookup: additiveMetadataResult.mediaLookup || null,
+      });
+    }
+
+    if (Object.keys(additiveMetadataResult.metadata).length === 0) {
+      return res.status(200).json({
+        ok: true,
+        jwStatus: 200,
+        endpoint: null,
+        request: { metadata: {} },
+        skipped: true,
+        message:
+          "No new metadata keys/fields to add. Existing metadata was left untouched.",
+        additiveSummary: additiveMetadataResult.summary,
+        mediaLookup: additiveMetadataResult.mediaLookup,
+      });
+    }
+
     const updateResult = await updateMedia({
       siteId: siteId.trim(),
       apiSecret: apiSecret.trim(),
       mediaId: mediaId.trim(),
-      metadata,
+      metadata: additiveMetadataResult.metadata,
     });
 
     return res.status(updateResult.jwStatus).json({
       ok: updateResult.ok,
       jwStatus: updateResult.jwStatus,
       endpoint: updateResult.endpoint,
-      request: { metadata },
+      request: { metadata: additiveMetadataResult.metadata },
+      additiveSummary: additiveMetadataResult.summary,
+      mediaLookup: additiveMetadataResult.mediaLookup,
       jwResponse: updateResult.jwResponse,
     });
   } catch (error) {
@@ -844,11 +877,48 @@ async function runBulkUpdate({ siteId, apiSecret, items }) {
 
   for (const item of items) {
     try {
+      const additiveMetadataResult = await resolveAdditiveMediaMetadata({
+        siteId,
+        apiSecret,
+        mediaId: item.mediaId,
+        incomingMetadata: item.metadata,
+      });
+
+      if (additiveMetadataResult.error) {
+        results.push({
+          mediaId: item.mediaId,
+          ok: false,
+          jwStatus: additiveMetadataResult.jwStatus || 502,
+          error:
+            additiveMetadataResult.error ||
+            "Unable to load existing media metadata before update.",
+          mediaLookup: additiveMetadataResult.mediaLookup || null,
+        });
+        continue;
+      }
+
+      if (Object.keys(additiveMetadataResult.metadata).length === 0) {
+        results.push({
+          mediaId: item.mediaId,
+          ok: true,
+          jwStatus: 200,
+          endpoint: null,
+          request: { metadata: {} },
+          skipped: true,
+          message:
+            "No new metadata keys/fields to add. Existing metadata was left untouched.",
+          additiveSummary: additiveMetadataResult.summary,
+          mediaLookup: additiveMetadataResult.mediaLookup,
+          jwResponse: null,
+        });
+        continue;
+      }
+
       const updateResult = await updateMedia({
         siteId,
         apiSecret,
         mediaId: item.mediaId,
-        metadata: item.metadata,
+        metadata: additiveMetadataResult.metadata,
       });
 
       results.push({
@@ -856,7 +926,9 @@ async function runBulkUpdate({ siteId, apiSecret, items }) {
         ok: updateResult.ok,
         jwStatus: updateResult.jwStatus,
         endpoint: updateResult.endpoint,
-        request: { metadata: item.metadata },
+        request: { metadata: additiveMetadataResult.metadata },
+        additiveSummary: additiveMetadataResult.summary,
+        mediaLookup: additiveMetadataResult.mediaLookup,
         jwResponse: updateResult.jwResponse,
       });
     } catch (error) {
@@ -880,6 +952,161 @@ async function runBulkUpdate({ siteId, apiSecret, items }) {
   };
 }
 
+async function resolveAdditiveMediaMetadata({
+  siteId,
+  apiSecret,
+  mediaId,
+  incomingMetadata,
+}) {
+  const mediaLookup = await getMedia({
+    siteId,
+    apiSecret,
+    mediaId,
+  });
+
+  if (!mediaLookup.ok) {
+    return {
+      error:
+        "Could not read current media metadata. Update skipped to avoid overwriting existing metadata.",
+      jwStatus: mediaLookup.jwStatus,
+      mediaLookup: {
+        ok: mediaLookup.ok,
+        jwStatus: mediaLookup.jwStatus,
+        endpoint: mediaLookup.endpoint,
+        jwResponse: mediaLookup.jwResponse,
+      },
+    };
+  }
+
+  const existingMetadata = extractMediaMetadata(mediaLookup.jwResponse);
+  const additiveResult = buildAdditiveMetadata({
+    existingMetadata,
+    incomingMetadata,
+  });
+
+  return {
+    metadata: additiveResult.metadata,
+    summary: additiveResult.summary,
+    mediaLookup: {
+      ok: mediaLookup.ok,
+      jwStatus: mediaLookup.jwStatus,
+      endpoint: mediaLookup.endpoint,
+      jwResponse: mediaLookup.jwResponse,
+    },
+  };
+}
+
+function buildAdditiveMetadata({ existingMetadata, incomingMetadata }) {
+  const metadata = {};
+  const summary = {
+    added: {
+      title: false,
+      description: false,
+      customParamKeys: [],
+    },
+    skippedExisting: {
+      title: false,
+      description: false,
+      customParamKeys: [],
+    },
+  };
+
+  if (isNonEmptyString(incomingMetadata.title)) {
+    if (isNonEmptyString(existingMetadata.title)) {
+      summary.skippedExisting.title = true;
+    } else {
+      metadata.title = incomingMetadata.title.trim();
+      summary.added.title = true;
+    }
+  }
+
+  if (isNonEmptyString(incomingMetadata.description)) {
+    if (isNonEmptyString(existingMetadata.description)) {
+      summary.skippedExisting.description = true;
+    } else {
+      metadata.description = incomingMetadata.description.trim();
+      summary.added.description = true;
+    }
+  }
+
+  const incomingCustomParams = toPlainObject(incomingMetadata.custom_params);
+  if (incomingCustomParams) {
+    const existingCustomParams = toPlainObject(existingMetadata.custom_params) || {};
+    const mergedCustomParams = { ...existingCustomParams };
+
+    for (const [key, value] of Object.entries(incomingCustomParams)) {
+      if (Object.prototype.hasOwnProperty.call(existingCustomParams, key)) {
+        summary.skippedExisting.customParamKeys.push(key);
+        continue;
+      }
+
+      mergedCustomParams[key] = value;
+      summary.added.customParamKeys.push(key);
+    }
+
+    if (summary.added.customParamKeys.length > 0) {
+      metadata.custom_params = mergedCustomParams;
+    }
+  }
+
+  return { metadata, summary };
+}
+
+function extractMediaMetadata(payload) {
+  if (payload === null || typeof payload !== "object") {
+    return {};
+  }
+
+  const candidates = [
+    payload.metadata,
+    payload.data?.metadata,
+    payload.data?.attributes?.metadata,
+    payload.attributes?.metadata,
+    payload.data?.attributes,
+    payload.attributes,
+    payload.data,
+    payload,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeMediaMetadataCandidate(candidate);
+    if (Object.keys(normalized).length > 0) {
+      return normalized;
+    }
+  }
+
+  return {};
+}
+
+function normalizeMediaMetadataCandidate(candidate) {
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return {};
+  }
+
+  const metadata = {};
+  if (typeof candidate.title === "string") {
+    metadata.title = candidate.title;
+  }
+  if (typeof candidate.description === "string") {
+    metadata.description = candidate.description;
+  }
+
+  const customParams = toPlainObject(candidate.custom_params);
+  if (customParams) {
+    metadata.custom_params = customParams;
+  }
+
+  return metadata;
+}
+
+function toPlainObject(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value;
+}
+
 async function updateMedia({ siteId, apiSecret, mediaId, metadata }) {
   const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
     siteId
@@ -890,6 +1117,18 @@ async function updateMedia({ siteId, apiSecret, mediaId, metadata }) {
     method: "PATCH",
     apiSecret,
     body: { metadata },
+  });
+}
+
+async function getMedia({ siteId, apiSecret, mediaId }) {
+  const endpoint = `https://api.jwplayer.com/v2/sites/${encodeURIComponent(
+    siteId
+  )}/media/${encodeURIComponent(mediaId)}/`;
+
+  return jwRequest({
+    endpoint,
+    method: "GET",
+    apiSecret,
   });
 }
 
@@ -965,15 +1204,22 @@ function hasTitleUnexpectedError(jwResponse) {
 }
 
 async function jwRequest({ endpoint, method, apiSecret, body }) {
-  const jwResponse = await fetch(endpoint, {
+  const headers = {
+    Authorization: `Bearer ${apiSecret}`,
+    Accept: "application/json",
+  };
+
+  const requestInit = {
     method,
-    headers: {
-      Authorization: `Bearer ${apiSecret}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+    headers,
+  };
+
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    requestInit.body = JSON.stringify(body);
+  }
+
+  const jwResponse = await fetch(endpoint, requestInit);
 
   const jwResponseBody = await parseResponseBody(jwResponse);
   return {
