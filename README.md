@@ -105,8 +105,11 @@ The server starts at:
 
 - Supports metadata update for one Media ID.
 - Includes `title`, `description`, and `custom_params`.
-- Additive behavior: existing values are preserved.
-- Example: if title already exists, sending a new title will **not** overwrite it.
+- Merge behavior:
+  - `title` and `description` update when provided.
+  - `custom_params` are merged into existing custom params.
+  - If a custom-param key already exists, the new value overwrites that key.
+  - Existing custom-param keys not present in the request are preserved.
 
 ### Bulk custom params (lines) tab
 
@@ -127,8 +130,10 @@ owner=content-ops
 ```
 
 All listed Media IDs receive the same `custom_params` payload.
-- Additive behavior: only missing custom-parameter keys are added.
-- Existing keys/values are left untouched.
+- Merge behavior:
+  - Request keys are added to existing `custom_params`.
+  - Matching keys are overwritten with new values.
+  - Other existing keys remain untouched.
 
 ### Bulk custom params (CSV) tab
 
@@ -144,7 +149,10 @@ QwEr4567,finance,q1,team-b
 - `MediaID` is required in each row.
 - Empty custom-parameter cells are ignored.
 - Rows without custom-parameter values are skipped.
-- Additive behavior: existing custom-parameter keys are preserved.
+- Merge behavior:
+  - CSV keys are merged into existing `custom_params`.
+  - Matching keys are overwritten by CSV values.
+  - Existing keys not present in CSV remain.
 
 ### Series setup tab
 
@@ -248,8 +256,8 @@ Series mapping request payload:
 - The backend validates required IDs and metadata limits before calling JW APIs.
 - Bulk endpoints accept up to 300 items per request.
 - API responses include per-item status/results for bulk operations.
-- Metadata updater endpoints are additive-only: they fetch current metadata first
-  and only add missing fields/keys.
+- Metadata updater endpoints fetch current media metadata first, then merge updates
+  so existing `custom_params` are preserved while matching keys can be updated.
 - Series setup returns a `seriesId` plus per-season creation results.
 - If your tenant rejects `metadata.title`, the placeholder creation route
   automatically retries with empty metadata.

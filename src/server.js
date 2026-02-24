@@ -92,7 +92,7 @@ app.post("/api/media/update", async (req, res) => {
         request: { metadata: {} },
         skipped: true,
         message:
-          "No new metadata keys/fields to add. Existing metadata was left untouched.",
+          "No metadata changes to apply. Existing metadata was left untouched.",
         additiveSummary: additiveMetadataResult.summary,
         mediaLookup: additiveMetadataResult.mediaLookup,
       });
@@ -906,7 +906,7 @@ async function runBulkUpdate({ siteId, apiSecret, items }) {
           request: { metadata: {} },
           skipped: true,
           message:
-            "No new metadata keys/fields to add. Existing metadata was left untouched.",
+            "No metadata changes to apply. Existing metadata was left untouched.",
           additiveSummary: additiveMetadataResult.summary,
           mediaLookup: additiveMetadataResult.mediaLookup,
           jwResponse: null,
@@ -1004,7 +1004,12 @@ function buildAdditiveMetadata({ existingMetadata, incomingMetadata }) {
       description: false,
       customParamKeys: [],
     },
-    skippedExisting: {
+    overwritten: {
+      title: false,
+      description: false,
+      customParamKeys: [],
+    },
+    unchanged: {
       title: false,
       description: false,
       customParamKeys: [],
@@ -1012,20 +1017,28 @@ function buildAdditiveMetadata({ existingMetadata, incomingMetadata }) {
   };
 
   if (isNonEmptyString(incomingMetadata.title)) {
-    if (isNonEmptyString(existingMetadata.title)) {
-      summary.skippedExisting.title = true;
-    } else {
-      metadata.title = incomingMetadata.title.trim();
+    const incomingTitle = incomingMetadata.title.trim();
+    if (!isNonEmptyString(existingMetadata.title)) {
+      metadata.title = incomingTitle;
       summary.added.title = true;
+    } else if (existingMetadata.title.trim() !== incomingTitle) {
+      metadata.title = incomingTitle;
+      summary.overwritten.title = true;
+    } else {
+      summary.unchanged.title = true;
     }
   }
 
   if (isNonEmptyString(incomingMetadata.description)) {
-    if (isNonEmptyString(existingMetadata.description)) {
-      summary.skippedExisting.description = true;
-    } else {
-      metadata.description = incomingMetadata.description.trim();
+    const incomingDescription = incomingMetadata.description.trim();
+    if (!isNonEmptyString(existingMetadata.description)) {
+      metadata.description = incomingDescription;
       summary.added.description = true;
+    } else if (existingMetadata.description.trim() !== incomingDescription) {
+      metadata.description = incomingDescription;
+      summary.overwritten.description = true;
+    } else {
+      summary.unchanged.description = true;
     }
   }
 
@@ -1036,7 +1049,13 @@ function buildAdditiveMetadata({ existingMetadata, incomingMetadata }) {
 
     for (const [key, value] of Object.entries(incomingCustomParams)) {
       if (Object.prototype.hasOwnProperty.call(existingCustomParams, key)) {
-        summary.skippedExisting.customParamKeys.push(key);
+        const existingValue = existingCustomParams[key];
+        if (existingValue === value) {
+          summary.unchanged.customParamKeys.push(key);
+        } else {
+          summary.overwritten.customParamKeys.push(key);
+        }
+        mergedCustomParams[key] = value;
         continue;
       }
 
@@ -1044,7 +1063,10 @@ function buildAdditiveMetadata({ existingMetadata, incomingMetadata }) {
       summary.added.customParamKeys.push(key);
     }
 
-    if (summary.added.customParamKeys.length > 0) {
+    if (
+      summary.added.customParamKeys.length > 0 ||
+      summary.overwritten.customParamKeys.length > 0
+    ) {
       metadata.custom_params = mergedCustomParams;
     }
   }
