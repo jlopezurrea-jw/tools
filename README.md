@@ -1,263 +1,60 @@
-# JWX Internal Metadata Updater
+# JWX Internal Metadata Updater (Static)
 
-Simple internal web tool for updating media metadata on a JWX property through the
-JW Platform Management API.
+Internal web tool for updating JWX media metadata directly from the browser using
+the JW Platform Management API.
 
-The app uses:
+## What changed
 
-- Endpoint: `PATCH https://api.jwplayer.com/v2/sites/{site_id}/media/{media_id}/`
-- Auth header: `Authorization: Bearer {api_secret}`
+This project is now **fully static**:
 
----
+- No Express server
+- No `/api/*` proxy routes
+- Frontend calls `https://api.jwplayer.com` directly with `fetch`
+- `siteId` and `apiSecret` are entered in the UI and used per request
 
 ## Features
 
 The UI has four tabs:
 
 1. **Single update**
-   - Input: Property ID, API Secret, Media ID
-   - Optional updates: `title`, `description`, `custom_params`
-
+   - Update one media item (`title`, `description`, `custom_params`)
 2. **Bulk custom params (lines)**
-   - Input: Property ID, API Secret
-   - Input multiple Media IDs (one per line)
-   - Applies one shared custom-parameter set to all listed Media IDs
-
+   - Apply shared custom params to many Media IDs
 3. **Bulk custom params (CSV)**
-   - Input: Property ID, API Secret
-   - Upload CSV where:
-     - first column header is `MediaID`
-     - remaining column headers are custom-parameter keys
-     - each row updates one media item with row-specific custom-parameter values
-
+   - Upload CSV: `MediaID,<custom_param_1>,<custom_param_2>,...`
 4. **Series setup**
-   - Input: Property ID, API Secret
-   - One-click placeholder series creation (returns `SeriesID`)
-   - Season/episode mapping workspace
-   - `+ Season` flow for adding multiple seasons with media toolboxes
+   - Create placeholder series
+   - Map seasons and episodes to a series
 
----
+## Metadata merge behavior
 
-## Prerequisites
+Before a media update, the app fetches existing metadata and merges changes:
 
-- Node.js 20+ (Node 22 works)
-- A JWX Management API secret for the property you want to edit (entered in the UI)
+- Existing `custom_params` are preserved
+- New keys are added
+- Matching keys are overwritten with incoming values
+- Existing keys not present in the request remain untouched
 
----
+## Local run
 
-## Step-by-step setup
-
-### 1) Get your Management API secret
-
-In the JWX dashboard:
-
-1. Open **Developer Tools** -> **Management API**.
-2. Select your property.
-3. Create an API key if needed.
-4. Copy the **secret** value.
-
-Keep this secret private.
-
-### 2) Install dependencies
-
-```bash
-npm install
-```
-
-### 3) Configure environment variables (optional)
-
-Only `PORT` is used by default.
-
-Create a `.env` file from `.env.example` if you want a custom port:
-
-```bash
-cp .env.example .env
-```
-
-Example:
-
-```env
-PORT=3000
-```
-
-### 4) Run the app
+No Node backend is required.
 
 ```bash
 npm start
 ```
 
-The server starts at:
+This serves `public/` as static files at:
 
 - `http://localhost:3000`
 
-### 5) Use the UI
+You can also host the `public/` directory on any static host (including GitLab Pages).
 
-1. Enter **Property ID** (`site_id`) at the top.
-2. Enter **API Secret** at the top.
-3. Choose a tab and submit your update request.
-4. Review the result panel for status and per-item responses.
+## GitLab Pages
 
----
+Deploy the static files from `public/` and open the hosted page.
+The app will call JW APIs directly from the browser.
 
-## Tab details
+## Security note
 
-### Single update tab
-
-- Supports metadata update for one Media ID.
-- Includes `title`, `description`, and `custom_params`.
-- Merge behavior:
-  - `title` and `description` update when provided.
-  - `custom_params` are merged into existing custom params.
-  - If a custom-param key already exists, the new value overwrites that key.
-  - Existing custom-param keys not present in the request are preserved.
-
-### Bulk custom params (lines) tab
-
-Media IDs input example:
-
-```text
-AbCd1234
-XyZ987ab
-QwEr4567
-```
-
-Custom params input example:
-
-```text
-department=marketing
-campaign=internal_q1
-owner=content-ops
-```
-
-All listed Media IDs receive the same `custom_params` payload.
-- Merge behavior:
-  - Request keys are added to existing `custom_params`.
-  - Matching keys are overwritten with new values.
-  - Other existing keys remain untouched.
-
-### Bulk custom params (CSV) tab
-
-CSV example:
-
-```csv
-MediaID,department,campaign,owner
-AbCd1234,marketing,winter,content-ops
-XyZ987ab,sales,spring,news-team
-QwEr4567,finance,q1,team-b
-```
-
-- `MediaID` is required in each row.
-- Empty custom-parameter cells are ignored.
-- Rows without custom-parameter values are skipped.
-- Merge behavior:
-  - CSV keys are merged into existing `custom_params`.
-  - Matching keys are overwritten by CSV values.
-  - Existing keys not present in CSV remain.
-
-### Series setup tab
-
-This tab now uses a two-step workflow:
-
-1. **Create placeholder series**
-   - Enter a **Series name** in the textbox
-   - Click **Create placeholder series**
-   - Tool creates a new series using that value where supported
-   - Returned `SeriesID` is displayed and auto-filled into Step 2
-
-2. **Map seasons and episodes**
-   - Enter or confirm `SeriesID`
-   - Add season cards with **+ Season**
-   - Left side: season number
-   - Right side: MediaIDs toolbox (one MediaID per line)
-   - Episode numbers are assigned automatically by line order
-     (`line 1 = episode 1`, `line 2 = episode 2`, etc.)
-
----
-
-## Payload examples
-
-Single update request payload:
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "mediaId": "AbCd1234",
-  "title": "New title",
-  "description": "New description",
-  "customParams": {
-    "department": "marketing"
-  }
-}
-```
-
-Bulk lines request payload:
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "mediaIds": ["AbCd1234", "XyZ987ab"],
-  "customParams": {
-    "department": "marketing",
-    "campaign": "winter"
-  }
-}
-```
-
-Bulk CSV request payload (after parsing in browser):
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "updates": [
-    {
-      "mediaId": "AbCd1234",
-      "customParams": {
-        "department": "marketing",
-        "campaign": "winter"
-      }
-    }
-  ]
-}
-```
-
-Series placeholder request payload:
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "seriesName": "My New Series"
-}
-```
-
-Series mapping request payload:
-
-```json
-{
-  "siteId": "abc12345",
-  "apiSecret": "your_secret",
-  "seriesId": "Series12345",
-  "seasons": [
-    {
-      "number": 1,
-      "mediaIds": ["AbCd1234", "XyZ987ab", "QwEr4567"]
-    }
-  ]
-}
-```
-
----
-
-## Notes
-
-- The backend validates required IDs and metadata limits before calling JW APIs.
-- Bulk endpoints accept up to 300 items per request.
-- API responses include per-item status/results for bulk operations.
-- Metadata updater endpoints fetch current media metadata first, then merge updates
-  so existing `custom_params` are preserved while matching keys can be updated.
-- Series setup returns a `seriesId` plus per-season creation results.
-- If your tenant rejects `metadata.title`, the placeholder creation route
-  automatically retries with empty metadata.
+Because this is a browser-only app, the API secret is used client-side.
+Use this only as an internal trusted tool and avoid exposing it publicly.
