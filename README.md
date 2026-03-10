@@ -1,18 +1,20 @@
 # JWX Custom Content Type Service
 
-Service + UI for creating custom content type schemas and exporting them as JSON for upload in the JWX dashboard.
+Service + UI for creating JWX content type schemas and exporting upload-ready JSON.
 
 ## What it does
 
-- Lets users define a content type (name, id, description)
-- Lets users add metadata fields
-  - Select field type (text, number, boolean, date, enum, media)
-  - Select display behavior for each field
-  - Mark required fields
-  - Add optional help text
-  - Define enum options where needed
-- Generates validated JSON schema
-- Allows downloading schema as `<content_type_id>.json`
+- Uses the same schema shape as your JWX examples:
+  - `description`, `display_name`, `hosting_type`, `is_active`, `is_series`, `languages`, `name`, `searchable`, `sections`
+- Section-based builder:
+  - Add/remove/reorder sections
+  - Add/remove/reorder fields inside each section
+- Field builder supports:
+  - `input`, `select`, `multiselect`, `media_select`, `toggle`, `date`, `date_time`, `playlist_multiselect`
+  - `required`, `read_only`, `default`, `placeholder`, `translatable`, `options`
+- Strict server-side validation and normalization
+- Import existing schema JSON into the UI, edit, then re-export
+- Download generated schema as `<name>.json`
 
 ## Run locally
 
@@ -25,28 +27,41 @@ Open: `http://localhost:3000`
 ## API endpoints
 
 - `GET /api/field-config`
-  - Returns supported field types and display options.
+  - Returns supported hosting types and field type capabilities.
 - `POST /api/content-types`
-  - Accepts a content type payload and returns generated JSON schema.
+  - Accepts schema payload and returns validated/normalized JWX JSON.
 
 Example request:
 
 ```json
 {
-  "name": "Video Metadata",
-  "description": "Metadata attached to video assets",
-  "fields": [
+  "description": "Movie Schema",
+  "display_name": "Movie",
+  "hosting_type": "hosted",
+  "is_active": true,
+  "is_series": false,
+  "languages": [{ "code": "en", "name": "English" }],
+  "name": "movie",
+  "searchable": true,
+  "sections": [
     {
-      "name": "Title",
-      "type": "text",
-      "display": "singleLine",
-      "required": true
-    },
-    {
-      "name": "Genre",
-      "type": "enum",
-      "display": "dropdown",
-      "options": ["Drama", "Comedy", "Documentary"]
+      "title": "General",
+      "fields": [
+        {
+          "description": "Use genre to categorize content",
+          "details": {
+            "field_type": "select",
+            "placeholder": "Select a genre",
+            "options": [
+              { "label": "Action", "value": "Action" },
+              { "label": "Comedy", "value": "Comedy" }
+            ]
+          },
+          "label": "Genre",
+          "param": "genre",
+          "required": true
+        }
+      ]
     }
   ]
 }

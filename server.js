@@ -1,7 +1,11 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { buildContentTypeDefinition, FIELD_TYPE_CONFIG } = require("./src/contentTypeBuilder");
+const {
+  buildContentTypeDefinition,
+  FIELD_TYPE_CONFIG,
+  HOSTING_TYPES
+} = require("./src/contentTypeBuilder");
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -71,7 +75,10 @@ function parseBody(req) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/field-config") {
-    return sendJson(res, 200, FIELD_TYPE_CONFIG);
+    return sendJson(res, 200, {
+      hostingTypes: HOSTING_TYPES,
+      fieldTypes: FIELD_TYPE_CONFIG
+    });
   }
 
   if (req.method === "POST" && req.url === "/api/content-types") {

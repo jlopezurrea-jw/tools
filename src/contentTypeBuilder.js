@@ -1,142 +1,248 @@
+const HOSTING_TYPES = ["hosted", "live_bcl", "external", "ott_data"];
+
 const FIELD_TYPE_CONFIG = {
-  text: {
-    label: "Text",
-    displayOptions: ["singleLine", "multiLine", "richText"]
+  input: {
+    label: "Input",
+    requiresOptions: false,
+    allows: ["placeholder", "translatable", "default"]
   },
-  number: {
-    label: "Number",
-    displayOptions: ["default", "currency", "percentage", "rating"]
+  select: {
+    label: "Select",
+    requiresOptions: true,
+    allows: ["placeholder", "options", "default"]
   },
-  boolean: {
-    label: "Boolean",
-    displayOptions: ["toggle", "checkbox"]
+  multiselect: {
+    label: "Multiselect",
+    requiresOptions: true,
+    allows: ["options", "default", "placeholder"]
+  },
+  media_select: {
+    label: "Media Select",
+    requiresOptions: false,
+    allows: []
+  },
+  toggle: {
+    label: "Toggle",
+    requiresOptions: false,
+    allows: ["default"]
   },
   date: {
     label: "Date",
-    displayOptions: ["dateOnly", "dateTime", "monthYear"]
+    requiresOptions: false,
+    allows: []
   },
-  enum: {
-    label: "Enum",
-    displayOptions: ["dropdown", "radio", "tags"]
+  date_time: {
+    label: "Date Time",
+    requiresOptions: false,
+    allows: []
   },
-  media: {
-    label: "Media",
-    displayOptions: ["image", "video", "file"]
+  playlist_multiselect: {
+    label: "Playlist Multiselect",
+    requiresOptions: false,
+    allows: []
   }
 };
 
-function toSlug(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+function ensureObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
+  }
 }
 
-function ensureFieldKey(field) {
-  const key = field.key || toSlug(field.name);
-  if (!key) {
-    throw new Error(`Field "${field.name || "unknown"}" is missing a valid key.`);
+function parseBooleanString(value, fieldLabel) {
+  if (typeof value !== "string") {
+    return value;
   }
-  return key;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  throw new Error(`Field "${fieldLabel}" toggle default must be true or false.`);
 }
 
-function validateField(field, index) {
-  if (!field || typeof field !== "object") {
-    throw new Error(`Field at position ${index + 1} must be an object.`);
+function normalizeOption(option, fieldLabel, optionIndex) {
+  if (typeof option === "string") {
+    const trimmed = option.trim();
+    if (!trimmed) {
+      throw new Error(`Field "${fieldLabel}" has an empty option at position ${optionIndex + 1}.`);
+    }
+    return { label: trimmed, value: trimmed };
   }
 
-  if (!field.name || !String(field.name).trim()) {
-    throw new Error(`Field at position ${index + 1} is missing a name.`);
+  ensureObject(
+    option,
+    `Field "${fieldLabel}" has invalid option at position ${optionIndex + 1}.`
+  );
+  const label = String(option.label || "").trim();
+  const value = String(option.value || "").trim();
+  if (!label || !value) {
+    throw new Error(`Field "${fieldLabel}" options require both label and value.`);
+  }
+  return { label, value };
+}
+
+function normalizeDetails(field) {
+  ensureObject(field.details, `Field "${field.label}" must include a details object.`);
+  const fieldType = String(field.details.field_type || "").trim();
+  const config = FIELD_TYPE_CONFIG[fieldType];
+  if (!config) {
+    throw new Error(`Field "${field.label}" has unsupported field_type "${fieldType}".`);
   }
 
-  if (!FIELD_TYPE_CONFIG[field.type]) {
-    throw new Error(
-      `Field "${field.name}" has unsupported type "${field.type}".`
-    );
-  }
+  const details = { field_type: fieldType };
+  const allowed = new Set(config.allows);
 
-  const displayOptions = FIELD_TYPE_CONFIG[field.type].displayOptions;
-  if (!displayOptions.includes(field.display)) {
-    throw new Error(
-      `Field "${field.name}" has unsupported display "${field.display}" for type "${field.type}".`
-    );
-  }
-
-  if (field.type === "enum") {
-    if (!Array.isArray(field.options) || field.options.length === 0) {
-      throw new Error(`Enum field "${field.name}" requires options.`);
+  if (allowed.has("placeholder") && field.details.placeholder !== undefined) {
+    const placeholder = String(field.details.placeholder).trim();
+    if (placeholder) {
+      details.placeholder = placeholder;
     }
   }
-}
 
-function normalizeField(field) {
-  const normalized = {
-    id: ensureFieldKey(field),
-    name: String(field.name).trim(),
-    type: field.type,
-    required: Boolean(field.required),
-    display: field.display
-  };
-
-  if (field.helpText) {
-    normalized.helpText = String(field.helpText).trim();
+  if (allowed.has("translatable") && field.details.translatable !== undefined) {
+    details.translatable = Boolean(field.details.translatable);
   }
 
-  if (field.type === "enum") {
-    normalized.options = field.options
-      .map((option) => String(option).trim())
-      .filter(Boolean)
-      .map((value) => ({ label: value, value: toSlug(value) }));
+  if (allowed.has("default") && field.details.default !== undefined) {
+    if (fieldType === "toggle") {
+      details.default = parseBooleanString(field.details.default, field.label);
+    } else {
+      details.default = field.details.default;
+    }
+  }
+
+  if (config.requiresOptions) {
+    if (!Array.isArray(field.details.options) || field.details.options.length === 0) {
+      throw new Error(`Field "${field.label}" requires at least one option.`);
+    }
+    details.options = field.details.options.map((option, index) =>
+      normalizeOption(option, field.label, index)
+    );
+  } else if (Array.isArray(field.details.options) && field.details.options.length > 0) {
+    details.options = field.details.options.map((option, index) =>
+      normalizeOption(option, field.label, index)
+    );
+  }
+
+  return details;
+}
+
+function normalizeField(field, sectionTitle, fieldIndex, seenParams) {
+  ensureObject(
+    field,
+    `Field at position ${fieldIndex + 1} in section "${sectionTitle}" must be an object.`
+  );
+
+  const label = String(field.label || "").trim();
+  const param = String(field.param || "").trim();
+  if (!label) {
+    throw new Error(`Field at position ${fieldIndex + 1} in section "${sectionTitle}" is missing label.`);
+  }
+  if (!param) {
+    throw new Error(`Field "${label}" is missing param.`);
+  }
+  if (seenParams.has(param)) {
+    throw new Error(`Duplicate param "${param}" detected across sections.`);
+  }
+  seenParams.add(param);
+
+  const normalized = {
+    description: String(field.description || "").trim(),
+    details: normalizeDetails({ ...field, label }),
+    label,
+    param
+  };
+
+  if (field.required !== undefined) {
+    normalized.required = Boolean(field.required);
+  }
+  if (field.read_only !== undefined) {
+    normalized.read_only = Boolean(field.read_only);
   }
 
   return normalized;
 }
 
-function buildContentTypeDefinition(input) {
-  if (!input || typeof input !== "object") {
-    throw new Error("Input payload must be an object.");
+function normalizeSection(section, sectionIndex, seenParams) {
+  ensureObject(section, `Section at position ${sectionIndex + 1} must be an object.`);
+  const title = String(section.title || "").trim();
+  if (!title) {
+    throw new Error(`Section at position ${sectionIndex + 1} is missing title.`);
+  }
+  if (!Array.isArray(section.fields) || section.fields.length === 0) {
+    throw new Error(`Section "${title}" must include at least one field.`);
   }
 
-  if (!input.name || !String(input.name).trim()) {
+  return {
+    title,
+    fields: section.fields.map((field, fieldIndex) =>
+      normalizeField(field, title, fieldIndex, seenParams)
+    )
+  };
+}
+
+function normalizeLanguages(languages) {
+  if (!Array.isArray(languages)) {
+    throw new Error("languages must be an array.");
+  }
+
+  return languages.map((language, index) => {
+    ensureObject(language, `Language at position ${index + 1} must be an object.`);
+    const code = String(language.code || "").trim();
+    const name = String(language.name || "").trim();
+    if (!code || !name) {
+      throw new Error(`Language at position ${index + 1} requires code and name.`);
+    }
+    return { code, name };
+  });
+}
+
+function buildContentTypeDefinition(input) {
+  ensureObject(input, "Input payload must be an object.");
+
+  const name = String(input.name || "").trim();
+  if (!name) {
     throw new Error("Content type name is required.");
   }
 
-  if (!Array.isArray(input.fields) || input.fields.length === 0) {
-    throw new Error("At least one field is required.");
+  const displayName = String(input.display_name || input.displayName || name).trim();
+  const hostingType = String(input.hosting_type || input.hostingType || "").trim();
+  if (!hostingType) {
+    throw new Error("hosting_type is required.");
+  }
+  if (!HOSTING_TYPES.includes(hostingType)) {
+    throw new Error(
+      `hosting_type "${hostingType}" is unsupported. Allowed values: ${HOSTING_TYPES.join(", ")}.`
+    );
   }
 
-  const typeId = toSlug(input.id || input.name);
-  if (!typeId) {
-    throw new Error("Content type id is invalid.");
+  if (!Array.isArray(input.sections) || input.sections.length === 0) {
+    throw new Error("At least one section is required.");
   }
 
-  const fieldIds = new Set();
-  const fields = input.fields.map((field, index) => {
-    validateField(field, index);
-    const normalized = normalizeField(field);
-    if (fieldIds.has(normalized.id)) {
-      throw new Error(`Duplicate field id "${normalized.id}" detected.`);
-    }
-    fieldIds.add(normalized.id);
-    return normalized;
-  });
+  const seenParams = new Set();
+  const sections = input.sections.map((section, index) =>
+    normalizeSection(section, index, seenParams)
+  );
 
   return {
-    schemaVersion: "1.0.0",
-    platform: "JWX",
-    contentType: {
-      id: typeId,
-      name: String(input.name).trim(),
-      description: String(input.description || "").trim(),
-      fields
-    },
-    generatedAt: new Date().toISOString()
+    description: String(input.description || "").trim(),
+    display_name: displayName,
+    hosting_type: hostingType,
+    is_active: input.is_active !== undefined ? Boolean(input.is_active) : true,
+    is_series: Boolean(input.is_series),
+    languages: normalizeLanguages(input.languages || []),
+    name,
+    searchable: input.searchable !== undefined ? Boolean(input.searchable) : true,
+    sections
   };
 }
 
 module.exports = {
+  HOSTING_TYPES,
   FIELD_TYPE_CONFIG,
-  buildContentTypeDefinition,
-  toSlug
+  buildContentTypeDefinition
 };

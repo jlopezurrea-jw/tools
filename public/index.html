@@ -11,31 +11,56 @@
       <section class="card">
         <h1>JWX Custom Content Type Builder</h1>
         <p class="subtitle">
-          Create a content type schema and export JSON for JWX dashboard upload.
+          Build, import, validate, and export JWX content type JSON.
         </p>
 
         <form id="builderForm">
-          <div class="row">
-            <label for="contentTypeName">Content Type Name</label>
-            <input id="contentTypeName" name="name" type="text" placeholder="e.g. VideoAssetMetadata" required />
+          <h2>Schema Details</h2>
+          <div class="grid top-grid">
+            <label>
+              Name
+              <input id="name" name="name" type="text" placeholder="e.g. movie or liveEvent" required />
+            </label>
+            <label>
+              Display Name
+              <input id="displayName" name="displayName" type="text" placeholder="e.g. Movie" required />
+            </label>
+            <label class="full-width">
+              Description
+              <textarea id="description" name="description" rows="2" placeholder="Schema description"></textarea>
+            </label>
+            <label>
+              Hosting Type
+              <select id="hostingType" name="hostingType"></select>
+            </label>
+            <label class="checkbox">
+              <input id="isActive" name="isActive" type="checkbox" checked />
+              Is Active
+            </label>
+            <label class="checkbox">
+              <input id="isSeries" name="isSeries" type="checkbox" />
+              Is Series
+            </label>
+            <label class="checkbox">
+              <input id="searchable" name="searchable" type="checkbox" checked />
+              Searchable
+            </label>
           </div>
 
-          <div class="row">
-            <label for="contentTypeId">Content Type ID (optional)</label>
-            <input id="contentTypeId" name="id" type="text" placeholder="auto-generated if empty" />
-          </div>
+          <h2>Languages</h2>
+          <div id="languagesContainer"></div>
+          <button type="button" id="addLanguageButton" class="secondary">Add Language</button>
 
-          <div class="row">
-            <label for="contentTypeDescription">Description</label>
-            <textarea id="contentTypeDescription" name="description" rows="3" placeholder="What is this metadata schema used for?"></textarea>
-          </div>
-
-          <h2>Fields</h2>
-          <div id="fieldsContainer" class="fields"></div>
-          <button type="button" id="addFieldButton" class="secondary">Add Field</button>
+          <h2>Sections</h2>
+          <div id="sectionsContainer" class="sections"></div>
+          <button type="button" id="addSectionButton" class="secondary">Add Section</button>
 
           <div class="actions">
             <button type="submit">Generate JSON</button>
+            <button type="button" id="importButton" class="secondary">
+              Import JSON
+            </button>
+            <input id="importFileInput" type="file" accept=".json,application/json" />
             <button type="button" id="downloadButton" class="secondary" disabled>
               Download JSON
             </button>
@@ -47,44 +72,96 @@
 
       <section class="card">
         <h2>JSON Preview</h2>
+        <label>
+          Paste JSON here to import (optional)
+          <textarea id="importJsonText" rows="8" placeholder='{"name":"movie", ...}'></textarea>
+        </label>
         <pre id="jsonPreview" class="preview">{}</pre>
       </section>
     </main>
 
+    <template id="languageTemplate">
+      <article class="language-row draggable-item" draggable="true">
+        <span class="drag-handle" title="Drag to reorder">⇅</span>
+        <label>
+          Code
+          <input data-language="code" type="text" placeholder="e.g. en" />
+        </label>
+        <label>
+          Name
+          <input data-language="name" type="text" placeholder="e.g. English" />
+        </label>
+        <button type="button" data-action="remove-language">Remove</button>
+      </article>
+    </template>
+
+    <template id="sectionTemplate">
+      <article class="section-row draggable-item" draggable="true">
+        <div class="section-header">
+          <div class="header-left">
+            <span class="drag-handle" title="Drag section">⇅</span>
+            <h3>Section</h3>
+          </div>
+          <button type="button" data-action="remove-section">Remove Section</button>
+        </div>
+        <label>
+          Title
+          <input data-section="title" type="text" placeholder="e.g. General" required />
+        </label>
+        <div data-section="fields" class="fields"></div>
+        <button type="button" data-action="add-field" class="secondary">Add Field</button>
+      </article>
+    </template>
+
     <template id="fieldTemplate">
-      <article class="field-row">
+      <article class="field-row draggable-item" draggable="true">
         <div class="field-header">
-          <h3>Field</h3>
-          <button type="button" data-action="remove">Remove</button>
+          <div class="header-left">
+            <span class="drag-handle" title="Drag field">⇅</span>
+            <h4>Field</h4>
+          </div>
+          <button type="button" data-action="remove-field">Remove</button>
         </div>
         <div class="grid">
           <label>
             Label
-            <input data-field="name" type="text" placeholder="e.g. Genre" required />
+            <input data-field="label" type="text" placeholder="e.g. Genre" required />
           </label>
           <label>
-            Key (optional)
-            <input data-field="key" type="text" placeholder="auto from label" />
+            Param
+            <input data-field="param" type="text" placeholder="e.g. genre or VCH.EventState" required />
           </label>
           <label>
-            Type
-            <select data-field="type"></select>
-          </label>
-          <label>
-            Display
-            <select data-field="display"></select>
+            Field Type
+            <select data-field="field_type"></select>
           </label>
           <label class="checkbox">
             <input data-field="required" type="checkbox" />
             Required
           </label>
+          <label class="checkbox">
+            <input data-field="read_only" type="checkbox" />
+            Read Only
+          </label>
           <label>
-            Help text (optional)
-            <input data-field="helpText" type="text" placeholder="Shown in metadata editor" />
+            Description
+            <input data-field="description" type="text" placeholder="Field description" />
+          </label>
+          <label class="full-width placeholder-wrapper hidden">
+            Placeholder
+            <input data-field="placeholder" type="text" placeholder="Optional placeholder text" />
+          </label>
+          <label class="full-width default-wrapper">
+            Default Value
+            <input data-field="default" type="text" placeholder="Optional default value" />
+          </label>
+          <label class="checkbox translatable-wrapper hidden">
+            <input data-field="translatable" type="checkbox" />
+            Translatable
           </label>
           <label class="full-width options-wrapper hidden">
-            Enum options (comma separated)
-            <input data-field="options" type="text" placeholder="Sports, News, Documentary" />
+            Options (one per line, use <code>Label|Value</code> or just <code>Value</code>)
+            <textarea data-field="options" rows="4" placeholder="Action|Action&#10;Comedy|Comedy"></textarea>
           </label>
         </div>
       </article>
