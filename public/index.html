@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JWX Custom Content Type Builder</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h1>JWX Custom Content Type Builder</h1>
+        <p class="subtitle">
+          Build, import, validate, and export JWX content type JSON.
+        </p>
+
+        <form id="builderForm">
+          <h2>Schema Details</h2>
+          <div class="grid top-grid">
+            <label>
+              Name
+              <input id="name" name="name" type="text" placeholder="e.g. movie or liveEvent" required />
+            </label>
+            <label>
+              Display Name
+              <input id="displayName" name="displayName" type="text" placeholder="e.g. Movie" required />
+            </label>
+            <label class="full-width">
+              Description
+              <textarea id="description" name="description" rows="2" placeholder="Schema description"></textarea>
+            </label>
+            <label>
+              Hosting Type
+              <select id="hostingType" name="hostingType"></select>
+            </label>
+            <label class="checkbox">
+              <input id="isActive" name="isActive" type="checkbox" checked />
+              Is Active
+            </label>
+            <label class="checkbox">
+              <input id="isSeries" name="isSeries" type="checkbox" />
+              Is Series
+            </label>
+            <label class="checkbox">
+              <input id="searchable" name="searchable" type="checkbox" checked />
+              Searchable
+            </label>
+          </div>
+
+          <details>
+            <summary>Languages (optional)</summary>
+            <label class="checkbox">
+              <input id="includeLanguages" name="includeLanguages" type="checkbox" />
+              Include languages
+            </label>
+            <label id="languagesTextWrapper" class="full-width hidden">
+              One language per line: <code>code|name</code> (example: <code>en|English</code>)
+              <textarea id="languagesText" rows="4" placeholder="en|English&#10;fr|French"></textarea>
+            </label>
+          </details>
+
+          <h2>Fields</h2>
+          <p class="subtitle">
+            Most schemas can be created from fields only. The tool will auto-place them in a
+            <strong>General</strong> section for JWX.
+          </p>
+          <div id="simpleFieldsContainer" class="fields"></div>
+          <button type="button" id="addSimpleFieldButton" class="secondary">Add Field</button>
+
+          <details>
+            <summary>Advanced: use custom sections</summary>
+            <p class="subtitle">
+              JWX schemas use sections internally. Enable this only if you need multiple groups.
+            </p>
+            <label class="checkbox">
+              <input id="advancedSectionsToggle" type="checkbox" />
+              Enable custom sections
+            </label>
+            <div id="advancedSectionsPanel" class="hidden">
+              <div id="sectionsContainer" class="sections"></div>
+              <button type="button" id="addSectionButton" class="secondary">Add Section</button>
+            </div>
+          </details>
+
+          <div class="actions">
+            <button type="submit">Generate JSON</button>
+            <button type="button" id="importButton" class="secondary">
+              Import JSON
+            </button>
+            <input id="importFileInput" type="file" accept=".json,application/json" />
+            <button type="button" id="downloadButton" class="secondary" disabled>
+              Download JSON
+            </button>
+          </div>
+        </form>
+
+        <p id="message" class="message"></p>
+      </section>
+
+      <section class="card">
+        <h2>JSON Preview</h2>
+        <label>
+          Paste JSON here to import (optional)
+          <textarea id="importJsonText" rows="8" placeholder='{"name":"movie", ...}'></textarea>
+        </label>
+        <pre id="jsonPreview" class="preview">{}</pre>
+      </section>
+    </main>
+
+    <template id="sectionTemplate">
+      <article class="section-row draggable-item" draggable="true">
+        <div class="section-header">
+          <div class="header-left">
+            <span class="drag-handle" title="Drag section">⇅</span>
+            <h3>Section</h3>
+          </div>
+          <button type="button" data-action="remove-section">Remove Section</button>
+        </div>
+        <label>
+          Title
+          <input data-section="title" type="text" placeholder="e.g. General" required />
+        </label>
+        <div data-section="fields" class="fields"></div>
+        <button type="button" data-action="add-field" class="secondary">Add Field</button>
+      </article>
+    </template>
+
+    <template id="fieldTemplate">
+      <article class="field-row draggable-item" draggable="true">
+        <div class="field-header">
+          <div class="header-left">
+            <span class="drag-handle" title="Drag field">⇅</span>
+            <h4>Field</h4>
+          </div>
+          <button type="button" data-action="remove-field">Remove</button>
+        </div>
+        <div class="grid">
+          <label>
+            Label
+            <input data-field="label" type="text" placeholder="e.g. Genre" required />
+          </label>
+          <label>
+            Param
+            <input data-field="param" type="text" placeholder="e.g. genre or VCH.EventState" required />
+          </label>
+          <label>
+            Field Type
+            <select data-field="field_type"></select>
+          </label>
+          <label>
+            Description
+            <input data-field="description" type="text" placeholder="Field description" />
+          </label>
+          <label class="checkbox">
+            <input data-field="required" type="checkbox" />
+            Required
+          </label>
+          <label class="checkbox">
+            <input data-field="read_only" type="checkbox" />
+            Read Only
+          </label>
+          <label class="full-width placeholder-wrapper hidden">
+            Placeholder
+            <input data-field="placeholder" type="text" placeholder="Optional placeholder text" />
+          </label>
+          <label class="full-width default-wrapper">
+            Default Value
+            <input data-field="default" type="text" placeholder="Optional default value" />
+          </label>
+          <label class="checkbox translatable-wrapper hidden">
+            <input data-field="translatable" type="checkbox" />
+            Translatable
+          </label>
+          <label class="full-width options-wrapper hidden">
+            Options (one per line, use <code>Label|Value</code> or just <code>Value</code>)
+            <textarea data-field="options" rows="4" placeholder="Action|Action&#10;Comedy|Comedy"></textarea>
+          </label>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
