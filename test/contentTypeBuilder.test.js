@@ -88,3 +88,43 @@ test("buildContentTypeDefinition enforces options for select fields", () => {
     })
   );
 });
+
+test("buildContentTypeDefinition supports simple fields input and auto-creates General section", () => {
+  const output = buildContentTypeDefinition({
+    name: "episode",
+    display_name: "Episode",
+    hosting_type: "hosted",
+    fields: [
+      {
+        label: "Cast",
+        param: "cast",
+        details: { field_type: "input" }
+      }
+    ]
+  });
+
+  assert.equal(output.sections.length, 1);
+  assert.equal(output.sections[0].title, "General");
+  assert.equal(output.sections[0].fields[0].param, "cast");
+});
+
+test("buildContentTypeDefinition tolerates missing languages", () => {
+  const output = buildContentTypeDefinition({
+    name: "liveEvent",
+    display_name: "Live Event",
+    hosting_type: "live_bcl",
+    languages: "invalid",
+    fields: [
+      {
+        label: "Status",
+        param: "VCH.EventState",
+        details: {
+          field_type: "select",
+          options: [{ label: "Scheduled", value: "PRE_LIVE" }]
+        }
+      }
+    ]
+  });
+
+  assert.deepEqual(output.languages, []);
+});

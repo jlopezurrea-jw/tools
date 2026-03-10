@@ -186,30 +186,96 @@ function normalizeSection(section, sectionIndex, seenParams) {
 
 function normalizeLanguages(languages) {
   if (!Array.isArray(languages)) {
-    throw new Error("languages must be an array.");
+    return [];
   }
 
-  return languages.map((language, index) => {
-    ensureObject(language, `Language at position ${index + 1} must be an object.`);
-    const code = String(language.code || "").trim();
-    const name = String(language.name || "").trim();
-    if (!code || !name) {
-      throw new Error(`Language at position ${index + 1} requires code and name.`);
+  return languages
+    .map((language) => {
+      if (!language) {
+        return null;
+      }
+
+      if (typeof language === "string") {
+        const codeFromString = language.trim();
+        if (!codeFromString) {
+          return null;
+        }
+        return { code: codeFromString.toLowerCase(), name: codeFromString };
+      }
+
+      if (typeof language !== "object" || Array.isArray(language)) {
+        return null;
+      }
+
+      const code = String(language.code || "").trim();
+      const name = String(language.name || "").trim();
+      if (!code || !name) {
+        return null;
+      }
+      return { code: code.toLowerCase(), name };
+    })
+    .filter(Boolean);
+}
+
+function normalizeSections(input) {
+  if (Array.isArray(input.sections) && input.sections.length > 0) {
+    const seenParams = new Set();
+    return input.sections.map((section, index) =>
+      normalizeSection(section, index, seenParams)
+    );
+  }
+
+  if (Array.isArray(input.fields) && input.fields.length > 0) {
+    const seenParams = new Set();
+    return [
+      {
+        title: String(input.default_section_title || "General").trim() || "General",
+        fields: input.fields.map((field, index) =>
+          normalizeField(field, "General", index, seenParams)
+        )
+      }
+    ];
+  }
+
+  throw new Error("At least one field is required.");
+}
+
+function normalizeOptionalBoolean(value, fallback) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  return Boolean(value);
+}
+
+function normalizeOptionalText(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function normalizeTopLevelString(input, candidates) {
+  for (const key of candidates) {
+    if (input[key] !== undefined && input[key] !== null) {
+      const output = String(input[key]).trim();
+      if (output) {
+        return output;
+      }
     }
-    return { code, name };
-  });
+  }
+  return "";
 }
 
 function buildContentTypeDefinition(input) {
   ensureObject(input, "Input payload must be an object.");
 
-  const name = String(input.name || "").trim();
+  const name = normalizeTopLevelString(input, ["name"]);
   if (!name) {
     throw new Error("Content type name is required.");
   }
 
-  const displayName = String(input.display_name || input.displayName || name).trim();
-  const hostingType = String(input.hosting_type || input.hostingType || "").trim();
+  const displayName = normalizeTopLevelString(input, ["display_name", "displayName"]) || name;
+  const hostingType = normalizeTopLevelString(input, ["hosting_type", "hostingType"]);
   if (!hostingType) {
     throw new Error("hosting_type is required.");
   }
@@ -219,24 +285,17 @@ function buildContentTypeDefinition(input) {
     );
   }
 
-  if (!Array.isArray(input.sections) || input.sections.length === 0) {
-    throw new Error("At least one section is required.");
-  }
-
-  const seenParams = new Set();
-  const sections = input.sections.map((section, index) =>
-    normalizeSection(section, index, seenParams)
-  );
+  const sections = normalizeSections(input);
 
   return {
-    description: String(input.description || "").trim(),
+    description: normalizeOptionalText(input.description),
     display_name: displayName,
     hosting_type: hostingType,
-    is_active: input.is_active !== undefined ? Boolean(input.is_active) : true,
-    is_series: Boolean(input.is_series),
+    is_active: normalizeOptionalBoolean(input.is_active, true),
+    is_series: normalizeOptionalBoolean(input.is_series, false),
     languages: normalizeLanguages(input.languages || []),
     name,
-    searchable: input.searchable !== undefined ? Boolean(input.searchable) : true,
+    searchable: normalizeOptionalBoolean(input.searchable, true),
     sections
   };
 }

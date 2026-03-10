@@ -6,14 +6,18 @@ Service + UI for creating JWX content type schemas and exporting upload-ready JS
 
 - Uses the same schema shape as your JWX examples:
   - `description`, `display_name`, `hosting_type`, `is_active`, `is_series`, `languages`, `name`, `searchable`, `sections`
-- Section-based builder:
-  - Add/remove/reorder sections
+- Simple field-first builder:
+  - Add fields directly (no section knowledge needed)
+  - Tool auto-wraps fields into a `General` section for JWX
+- Optional advanced mode:
+  - Add/remove/reorder custom sections
   - Add/remove/reorder fields inside each section
 - Field builder supports:
   - `input`, `select`, `multiselect`, `media_select`, `toggle`, `date`, `date_time`, `playlist_multiselect`
   - `required`, `read_only`, `default`, `placeholder`, `translatable`, `options`
 - Strict server-side validation and normalization
 - Import existing schema JSON into the UI, edit, then re-export
+- Optional languages input (disabled by default)
 - Download generated schema as `<name>.json`
 
 ## Run locally

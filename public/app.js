@@ -1,11 +1,15 @@
 const form = document.querySelector("#builderForm");
-const sectionsContainer = document.querySelector("#sectionsContainer");
-const sectionTemplate = document.querySelector("#sectionTemplate");
 const fieldTemplate = document.querySelector("#fieldTemplate");
-const languageTemplate = document.querySelector("#languageTemplate");
-const languagesContainer = document.querySelector("#languagesContainer");
+const sectionTemplate = document.querySelector("#sectionTemplate");
+const simpleFieldsContainer = document.querySelector("#simpleFieldsContainer");
+const sectionsContainer = document.querySelector("#sectionsContainer");
+const addSimpleFieldButton = document.querySelector("#addSimpleFieldButton");
 const addSectionButton = document.querySelector("#addSectionButton");
-const addLanguageButton = document.querySelector("#addLanguageButton");
+const advancedSectionsToggle = document.querySelector("#advancedSectionsToggle");
+const advancedSectionsPanel = document.querySelector("#advancedSectionsPanel");
+const includeLanguagesToggle = document.querySelector("#includeLanguages");
+const languagesTextWrapper = document.querySelector("#languagesTextWrapper");
+const languagesText = document.querySelector("#languagesText");
 const importButton = document.querySelector("#importButton");
 const importFileInput = document.querySelector("#importFileInput");
 const importJsonText = document.querySelector("#importJsonText");
@@ -25,34 +29,6 @@ function setMessage(text, type = "") {
 function markDirty() {
   latestJson = null;
   downloadButton.disabled = true;
-}
-
-function updateFieldTypeVisibility(row) {
-  const fieldType = row.querySelector('[data-field="field_type"]').value;
-  const optionsWrapper = row.querySelector(".options-wrapper");
-  const placeholderWrapper = row.querySelector(".placeholder-wrapper");
-  const translatableWrapper = row.querySelector(".translatable-wrapper");
-  const defaultWrapper = row.querySelector(".default-wrapper");
-  const allowed = new Set((fieldTypes[fieldType] || {}).allows || []);
-  const requiresOptions = Boolean((fieldTypes[fieldType] || {}).requiresOptions);
-
-  optionsWrapper.classList.toggle("hidden", !requiresOptions);
-  placeholderWrapper.classList.toggle("hidden", !allowed.has("placeholder"));
-  translatableWrapper.classList.toggle("hidden", !allowed.has("translatable"));
-  defaultWrapper.classList.toggle("hidden", !allowed.has("default"));
-}
-
-function populateFieldTypeOptions(selectNode, selectedValue) {
-  selectNode.innerHTML = "";
-  Object.entries(fieldTypes).forEach(([value, config]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = config.label;
-    if (selectedValue && selectedValue === value) {
-      option.selected = true;
-    }
-    selectNode.append(option);
-  });
 }
 
 function parseOptionsText(rawText) {
@@ -76,18 +52,46 @@ function optionsToText(options) {
   }
   return options
     .map((option) => {
-      if (!option || typeof option !== "object") {
-        return "";
-      }
-      const label = String(option.label || "").trim();
-      const value = String(option.value || "").trim();
+      const label = String(option?.label || "").trim();
+      const value = String(option?.value || "").trim();
       if (!label || !value) {
         return "";
       }
-      if (label === value) {
-        return label;
+      return label === value ? label : `${label}|${value}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseLanguagesText(rawText) {
+  return String(rawText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [codeRaw, nameRaw] = line.split("|");
+      const code = String(codeRaw || "").trim().toLowerCase();
+      const name = String(nameRaw || codeRaw || "").trim();
+      if (!code || !name) {
+        return null;
       }
-      return `${label}|${value}`;
+      return { code, name };
+    })
+    .filter(Boolean);
+}
+
+function languagesToText(languages) {
+  if (!Array.isArray(languages) || languages.length === 0) {
+    return "";
+  }
+  return languages
+    .map((language) => {
+      const code = String(language?.code || "").trim().toLowerCase();
+      const name = String(language?.name || "").trim();
+      if (!code || !name) {
+        return "";
+      }
+      return `${code}|${name}`;
     })
     .filter(Boolean)
     .join("\n");
@@ -124,8 +128,7 @@ function attachSortable(container, selector) {
       return;
     }
     const rect = targetItem.getBoundingClientRect();
-    const insertAfter = event.clientY > rect.top + rect.height / 2;
-    if (insertAfter) {
+    if (event.clientY > rect.top + rect.height / 2) {
       targetItem.after(draggedNode);
     } else {
       targetItem.before(draggedNode);
@@ -133,29 +136,40 @@ function attachSortable(container, selector) {
   });
 }
 
-function createLanguageRow(language = {}) {
-  const fragment = languageTemplate.content.cloneNode(true);
-  const row = fragment.querySelector(".language-row");
-  row.querySelector('[data-language="code"]').value = language.code || "";
-  row.querySelector('[data-language="name"]').value = language.name || "";
-
-  row.querySelector('[data-action="remove-language"]').addEventListener("click", () => {
-    row.remove();
-    markDirty();
-    setMessage("");
+function populateFieldTypeOptions(selectNode, selectedValue) {
+  selectNode.innerHTML = "";
+  Object.entries(fieldTypes).forEach(([value, config]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = config.label;
+    if (selectedValue === value) {
+      option.selected = true;
+    }
+    selectNode.append(option);
   });
-
-  row.addEventListener("input", markDirty);
-  languagesContainer.append(fragment);
 }
 
-function createFieldRow(fieldsContainerNode, field = {}) {
+function updateFieldTypeVisibility(row) {
+  const fieldType = row.querySelector('[data-field="field_type"]').value;
+  const optionsWrapper = row.querySelector(".options-wrapper");
+  const placeholderWrapper = row.querySelector(".placeholder-wrapper");
+  const translatableWrapper = row.querySelector(".translatable-wrapper");
+  const defaultWrapper = row.querySelector(".default-wrapper");
+  const config = fieldTypes[fieldType] || {};
+  const allowed = new Set(config.allows || []);
+
+  optionsWrapper.classList.toggle("hidden", !config.requiresOptions);
+  placeholderWrapper.classList.toggle("hidden", !allowed.has("placeholder"));
+  translatableWrapper.classList.toggle("hidden", !allowed.has("translatable"));
+  defaultWrapper.classList.toggle("hidden", !allowed.has("default"));
+}
+
+function createFieldRow(containerNode, field = {}) {
   const fragment = fieldTemplate.content.cloneNode(true);
   const row = fragment.querySelector(".field-row");
-  const fieldTypeSelect = row.querySelector('[data-field="field_type"]');
+  const typeSelect = row.querySelector('[data-field="field_type"]');
 
-  populateFieldTypeOptions(fieldTypeSelect, field.details?.field_type);
-
+  populateFieldTypeOptions(typeSelect, field.details?.field_type);
   row.querySelector('[data-field="label"]').value = field.label || "";
   row.querySelector('[data-field="param"]').value = field.param || "";
   row.querySelector('[data-field="description"]').value = field.description || "";
@@ -168,88 +182,61 @@ function createFieldRow(fieldsContainerNode, field = {}) {
   row.querySelector('[data-field="options"]').value = optionsToText(field.details?.options);
 
   if (!field.details?.field_type) {
-    fieldTypeSelect.selectedIndex = 0;
+    typeSelect.selectedIndex = 0;
   }
   updateFieldTypeVisibility(row);
 
   row.querySelector('[data-action="remove-field"]').addEventListener("click", () => {
     row.remove();
     markDirty();
-    setMessage("");
   });
-
-  fieldTypeSelect.addEventListener("change", () => {
+  typeSelect.addEventListener("change", () => {
     updateFieldTypeVisibility(row);
     markDirty();
   });
-
   row.addEventListener("input", markDirty);
   row.addEventListener("change", markDirty);
-  fieldsContainerNode.append(fragment);
+  containerNode.append(fragment);
 }
 
 function createSectionRow(section = {}) {
   const fragment = sectionTemplate.content.cloneNode(true);
   const row = fragment.querySelector(".section-row");
-  const sectionTitleInput = row.querySelector('[data-section="title"]');
-  const fieldsContainerNode = row.querySelector('[data-section="fields"]');
-
-  sectionTitleInput.value = section.title || "";
+  const titleInput = row.querySelector('[data-section="title"]');
+  const sectionFieldsContainer = row.querySelector('[data-section="fields"]');
+  titleInput.value = section.title || "";
 
   row.querySelector('[data-action="remove-section"]').addEventListener("click", () => {
     row.remove();
     markDirty();
-    setMessage("");
   });
-
   row.querySelector('[data-action="add-field"]').addEventListener("click", () => {
-    createFieldRow(fieldsContainerNode);
+    createFieldRow(sectionFieldsContainer);
     markDirty();
   });
+  titleInput.addEventListener("input", markDirty);
 
-  sectionTitleInput.addEventListener("input", markDirty);
-  attachSortable(fieldsContainerNode, ".field-row");
-
-  const fields = Array.isArray(section.fields) && section.fields.length > 0 ? section.fields : [{}];
-  fields.forEach((field) => createFieldRow(fieldsContainerNode, field));
-
+  const fields = Array.isArray(section.fields) && section.fields.length ? section.fields : [{}];
+  fields.forEach((field) => createFieldRow(sectionFieldsContainer, field));
+  attachSortable(sectionFieldsContainer, ".field-row");
   sectionsContainer.append(fragment);
 }
 
-function clearBuilder() {
-  sectionsContainer.innerHTML = "";
-  languagesContainer.innerHTML = "";
-}
-
-function collectLanguages() {
-  return [...languagesContainer.querySelectorAll(".language-row")]
-    .map((row) => ({
-      code: row.querySelector('[data-language="code"]').value.trim(),
-      name: row.querySelector('[data-language="name"]').value.trim()
-    }))
-    .filter((language) => language.code || language.name);
-}
-
 function collectField(row) {
-  const details = {
-    field_type: row.querySelector('[data-field="field_type"]').value
-  };
-
+  const details = { field_type: row.querySelector('[data-field="field_type"]').value };
   const placeholder = row.querySelector('[data-field="placeholder"]').value.trim();
+  const defaultValue = row.querySelector('[data-field="default"]').value.trim();
+  const options = parseOptionsText(row.querySelector('[data-field="options"]').value);
+
   if (placeholder) {
     details.placeholder = placeholder;
   }
-
-  const defaultValue = row.querySelector('[data-field="default"]').value.trim();
   if (defaultValue) {
     details.default = defaultValue;
   }
-
   if (row.querySelector('[data-field="translatable"]').checked) {
     details.translatable = true;
   }
-
-  const options = parseOptionsText(row.querySelector('[data-field="options"]').value);
   if (options.length > 0) {
     details.options = options;
   }
@@ -270,6 +257,10 @@ function collectField(row) {
   return field;
 }
 
+function collectSimpleFields() {
+  return [...simpleFieldsContainer.querySelectorAll(".field-row")].map(collectField);
+}
+
 function collectSections() {
   return [...sectionsContainer.querySelectorAll(".section-row")].map((sectionNode) => ({
     title: sectionNode.querySelector('[data-section="title"]').value.trim(),
@@ -277,18 +268,37 @@ function collectSections() {
   }));
 }
 
+function getAllSectionFields() {
+  return collectSections().flatMap((section) => section.fields || []);
+}
+
+function setAdvancedSectionsEnabled(enabled) {
+  advancedSectionsToggle.checked = enabled;
+  advancedSectionsPanel.classList.toggle("hidden", !enabled);
+}
+
 function collectPayload() {
-  return {
+  const payload = {
     description: form.elements.description.value.trim(),
     display_name: form.elements.displayName.value.trim(),
     hosting_type: form.elements.hostingType.value,
     is_active: form.elements.isActive.checked,
     is_series: form.elements.isSeries.checked,
-    languages: collectLanguages(),
     name: form.elements.name.value.trim(),
-    searchable: form.elements.searchable.checked,
-    sections: collectSections()
+    searchable: form.elements.searchable.checked
   };
+
+  payload.languages = includeLanguagesToggle.checked
+    ? parseLanguagesText(languagesText.value)
+    : [];
+
+  if (advancedSectionsToggle.checked) {
+    payload.sections = collectSections();
+  } else {
+    payload.fields = collectSimpleFields();
+  }
+
+  return payload;
 }
 
 async function loadConfig() {
@@ -316,14 +326,20 @@ function downloadSchema() {
   if (!latestJson) {
     return;
   }
-  const data = JSON.stringify(latestJson, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(latestJson, null, 2)], {
+    type: "application/json"
+  });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${latestJson.name || "content_type"}.json`;
-  anchor.click();
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${latestJson.name || "content_type"}.json`;
+  link.click();
   URL.revokeObjectURL(url);
+}
+
+function clearBuilder() {
+  simpleFieldsContainer.innerHTML = "";
+  sectionsContainer.innerHTML = "";
 }
 
 function hydrateFormFromSchema(schema) {
@@ -335,21 +351,26 @@ function hydrateFormFromSchema(schema) {
   form.elements.isSeries.checked = Boolean(schema.is_series);
   form.elements.searchable.checked = schema.searchable !== undefined ? Boolean(schema.searchable) : true;
 
-  clearBuilder();
-  (schema.languages || []).forEach((language) => createLanguageRow(language));
-  if ((schema.languages || []).length === 0) {
-    createLanguageRow();
-  }
+  const hasLanguages = Array.isArray(schema.languages) && schema.languages.length > 0;
+  includeLanguagesToggle.checked = hasLanguages;
+  languagesTextWrapper.classList.toggle("hidden", !hasLanguages);
+  languagesText.value = languagesToText(schema.languages);
 
-  (schema.sections || []).forEach((section) => createSectionRow(section));
-  if ((schema.sections || []).length === 0) {
-    createSectionRow();
+  clearBuilder();
+  const sections = Array.isArray(schema.sections) ? schema.sections : [];
+  if (sections.length <= 1) {
+    setAdvancedSectionsEnabled(false);
+    const fields = sections[0]?.fields || [];
+    (fields.length ? fields : [{}]).forEach((field) => createFieldRow(simpleFieldsContainer, field));
+  } else {
+    setAdvancedSectionsEnabled(true);
+    sections.forEach((section) => createSectionRow(section));
   }
 }
 
 async function importSchema(rawText) {
   if (!rawText.trim()) {
-    throw new Error("Paste JSON or select a file before importing.");
+    throw new Error("Paste JSON or choose a file first.");
   }
   let parsed;
   try {
@@ -379,13 +400,41 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-addSectionButton.addEventListener("click", () => {
-  createSectionRow();
+includeLanguagesToggle.addEventListener("change", () => {
+  languagesTextWrapper.classList.toggle("hidden", !includeLanguagesToggle.checked);
   markDirty();
 });
 
-addLanguageButton.addEventListener("click", () => {
-  createLanguageRow();
+advancedSectionsToggle.addEventListener("change", () => {
+  const enabled = advancedSectionsToggle.checked;
+  setAdvancedSectionsEnabled(enabled);
+
+  if (enabled && sectionsContainer.children.length === 0) {
+    const fields = collectSimpleFields();
+    sectionsContainer.innerHTML = "";
+    createSectionRow({
+      title: "General",
+      fields: fields.length ? fields : [{}]
+    });
+  }
+
+  if (!enabled) {
+    const flattenedFields = getAllSectionFields();
+    simpleFieldsContainer.innerHTML = "";
+    (flattenedFields.length ? flattenedFields : [{}]).forEach((field) =>
+      createFieldRow(simpleFieldsContainer, field)
+    );
+  }
+  markDirty();
+});
+
+addSimpleFieldButton.addEventListener("click", () => {
+  createFieldRow(simpleFieldsContainer);
+  markDirty();
+});
+
+addSectionButton.addEventListener("click", () => {
+  createSectionRow();
   markDirty();
 });
 
@@ -431,10 +480,11 @@ async function init() {
       option.textContent = hostingType;
       hostingTypeSelect.append(option);
     });
-    createLanguageRow();
-    createSectionRow();
-    attachSortable(languagesContainer, ".language-row");
+    createFieldRow(simpleFieldsContainer);
+    attachSortable(simpleFieldsContainer, ".field-row");
     attachSortable(sectionsContainer, ".section-row");
+    setAdvancedSectionsEnabled(false);
+    languagesTextWrapper.classList.add("hidden");
   } catch (error) {
     setMessage(error.message, "error");
   }

@@ -47,13 +47,40 @@
             </label>
           </div>
 
-          <h2>Languages</h2>
-          <div id="languagesContainer"></div>
-          <button type="button" id="addLanguageButton" class="secondary">Add Language</button>
+          <details>
+            <summary>Languages (optional)</summary>
+            <label class="checkbox">
+              <input id="includeLanguages" name="includeLanguages" type="checkbox" />
+              Include languages
+            </label>
+            <label id="languagesTextWrapper" class="full-width hidden">
+              One language per line: <code>code|name</code> (example: <code>en|English</code>)
+              <textarea id="languagesText" rows="4" placeholder="en|English&#10;fr|French"></textarea>
+            </label>
+          </details>
 
-          <h2>Sections</h2>
-          <div id="sectionsContainer" class="sections"></div>
-          <button type="button" id="addSectionButton" class="secondary">Add Section</button>
+          <h2>Fields</h2>
+          <p class="subtitle">
+            Most schemas can be created from fields only. The tool will auto-place them in a
+            <strong>General</strong> section for JWX.
+          </p>
+          <div id="simpleFieldsContainer" class="fields"></div>
+          <button type="button" id="addSimpleFieldButton" class="secondary">Add Field</button>
+
+          <details>
+            <summary>Advanced: use custom sections</summary>
+            <p class="subtitle">
+              JWX schemas use sections internally. Enable this only if you need multiple groups.
+            </p>
+            <label class="checkbox">
+              <input id="advancedSectionsToggle" type="checkbox" />
+              Enable custom sections
+            </label>
+            <div id="advancedSectionsPanel" class="hidden">
+              <div id="sectionsContainer" class="sections"></div>
+              <button type="button" id="addSectionButton" class="secondary">Add Section</button>
+            </div>
+          </details>
 
           <div class="actions">
             <button type="submit">Generate JSON</button>
@@ -79,21 +106,6 @@
         <pre id="jsonPreview" class="preview">{}</pre>
       </section>
     </main>
-
-    <template id="languageTemplate">
-      <article class="language-row draggable-item" draggable="true">
-        <span class="drag-handle" title="Drag to reorder">⇅</span>
-        <label>
-          Code
-          <input data-language="code" type="text" placeholder="e.g. en" />
-        </label>
-        <label>
-          Name
-          <input data-language="name" type="text" placeholder="e.g. English" />
-        </label>
-        <button type="button" data-action="remove-language">Remove</button>
-      </article>
-    </template>
 
     <template id="sectionTemplate">
       <article class="section-row draggable-item" draggable="true">
@@ -135,6 +147,10 @@
             Field Type
             <select data-field="field_type"></select>
           </label>
+          <label>
+            Description
+            <input data-field="description" type="text" placeholder="Field description" />
+          </label>
           <label class="checkbox">
             <input data-field="required" type="checkbox" />
             Required
@@ -142,10 +158,6 @@
           <label class="checkbox">
             <input data-field="read_only" type="checkbox" />
             Read Only
-          </label>
-          <label>
-            Description
-            <input data-field="description" type="text" placeholder="Field description" />
           </label>
           <label class="full-width placeholder-wrapper hidden">
             Placeholder

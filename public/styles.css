@@ -34,6 +34,19 @@ h1, h2, h3 {
   color: #4b5563;
 }
 
+details {
+  margin: 0.9rem 0;
+  padding: 0.7rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fcfcfc;
+}
+
+summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .row,
 .grid label {
   display: flex;
@@ -120,6 +133,10 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.field-header h4 {
+  margin: 0;
 }
 
 .section-header {
