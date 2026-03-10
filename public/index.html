@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JWX Metadata Updater</title>
+    <link rel="stylesheet" href="styles.css?v=20260213a" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>JWX Metadata Updater</h1>
+      <p class="intro">
+        Update media metadata through the JW Platform Management API.
+      </p>
+
+      <section class="credentials-panel">
+        <h2>Connection settings</h2>
+        <div class="field-group">
+          <label for="shared-site-id">Property ID (site_id)</label>
+          <input
+            id="shared-site-id"
+            name="sharedSiteId"
+            type="text"
+            required
+            placeholder="abc12345"
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="shared-api-secret">API Secret</label>
+          <input
+            id="shared-api-secret"
+            name="sharedApiSecret"
+            type="password"
+            required
+            placeholder="Paste your Management API secret"
+            autocomplete="off"
+          />
+          <p class="hint">
+            The secret stays in your browser session and is sent directly to the
+            JW Platform API with each request.
+          </p>
+        </div>
+      </section>
+
+      <div class="tabs" role="tablist" aria-label="Metadata update modes">
+        <button
+          type="button"
+          class="tab-button active"
+          data-target-tab="single-tab"
+          role="tab"
+          aria-selected="true"
+        >
+          Single update
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          data-target-tab="bulk-lines-tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Bulk custom params (lines)
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          data-target-tab="bulk-csv-tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Bulk custom params (CSV)
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          data-target-tab="series-tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Series setup
+        </button>
+      </div>
+
+      <section id="single-tab" class="tab-panel active" role="tabpanel">
+        <form id="single-form" novalidate>
+          <div class="field-group">
+            <label for="single-media-id">Media ID</label>
+            <input
+              id="single-media-id"
+              name="singleMediaId"
+              type="text"
+              required
+              placeholder="XyZ987ab"
+            />
+          </div>
+
+          <div class="field-group">
+            <label for="single-title">Title (optional)</label>
+            <input
+              id="single-title"
+              name="singleTitle"
+              type="text"
+              maxlength="5000"
+              placeholder="New media title"
+            />
+          </div>
+
+          <div class="field-group">
+            <label for="single-description">Description (optional)</label>
+            <textarea
+              id="single-description"
+              name="singleDescription"
+              rows="5"
+              maxlength="25000"
+              placeholder="Updated media description"
+            ></textarea>
+          </div>
+
+          <div class="field-group">
+            <label for="single-custom-params"
+              >Custom parameters (optional, one per line as key=value)</label
+            >
+            <textarea
+              id="single-custom-params"
+              name="singleCustomParams"
+              rows="6"
+              placeholder="department=marketing&#10;campaign=winter_launch"
+            ></textarea>
+          </div>
+
+          <button type="submit" id="single-submit-btn">Update metadata</button>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="single-status-line">No request sent yet.</p>
+          <pre id="single-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <section id="bulk-lines-tab" class="tab-panel" role="tabpanel" hidden>
+        <form id="bulk-lines-form" novalidate>
+          <div class="field-group">
+            <label for="bulk-lines-media-ids"
+              >Media IDs (one Media ID per line)</label
+            >
+            <textarea
+              id="bulk-lines-media-ids"
+              name="bulkLinesMediaIds"
+              rows="8"
+              placeholder="AbCd1234&#10;XyZ987ab&#10;QwEr4567"
+            ></textarea>
+          </div>
+
+          <div class="field-group">
+            <label for="bulk-lines-custom-params"
+              >Custom parameters to apply to all listed media (key=value)</label
+            >
+            <textarea
+              id="bulk-lines-custom-params"
+              name="bulkLinesCustomParams"
+              rows="6"
+              placeholder="department=marketing&#10;campaign=winter_launch"
+            ></textarea>
+          </div>
+
+          <button type="submit" id="bulk-lines-submit-btn">
+            Run bulk custom parameter update
+          </button>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="bulk-lines-status-line">No request sent yet.</p>
+          <pre id="bulk-lines-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <section id="bulk-csv-tab" class="tab-panel" role="tabpanel" hidden>
+        <form id="bulk-csv-form" novalidate>
+          <div class="field-group">
+            <label for="bulk-csv-file">Upload CSV file</label>
+            <input
+              id="bulk-csv-file"
+              name="bulkCsvFile"
+              type="file"
+              accept=".csv,text/csv"
+              required
+            />
+            <p class="hint">
+              CSV format: first column header must be <strong>MediaID</strong>.
+              Every other column header is treated as a custom parameter key.
+            </p>
+            <pre class="format-example">MediaID,department,campaign
+AbCd1234,marketing,winter
+XyZ987ab,sales,spring</pre>
+          </div>
+
+          <button type="submit" id="bulk-csv-submit-btn">
+            Run CSV bulk custom parameter update
+          </button>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="bulk-csv-status-line">No request sent yet.</p>
+          <pre id="bulk-csv-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <section id="series-tab" class="tab-panel" role="tabpanel" hidden>
+        <section class="series-step-card">
+          <h2>Step 1: Create placeholder series</h2>
+          <p class="hint">
+            Click once to create a new placeholder series. The generated
+            <strong>SeriesID</strong> will be returned and auto-filled below.
+          </p>
+          <div class="field-group">
+            <label for="series-create-title">Series name (label)</label>
+            <input
+              id="series-create-title"
+              name="seriesCreateTitle"
+              type="text"
+              required
+              placeholder="My Series Label"
+            />
+            <p class="hint">
+              This label is used to create the series when supported by your
+              tenant configuration.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="series-create-placeholder-btn"
+            class="primary-button"
+          >
+            Create placeholder series
+          </button>
+
+          <section class="result-section compact-result">
+            <p id="series-placeholder-status-line">No request sent yet.</p>
+            <pre id="series-placeholder-response-box" aria-live="polite"></pre>
+          </section>
+        </section>
+
+        <form id="series-map-form" class="series-step-card" novalidate>
+          <h2>Step 2: Map seasons and episodes</h2>
+
+          <div class="field-group">
+            <label for="series-map-series-id">SeriesID</label>
+            <input
+              id="series-map-series-id"
+              name="seriesMapSeriesId"
+              type="text"
+              required
+              placeholder="Paste or use returned SeriesID"
+            />
+          </div>
+
+          <div id="series-seasons-container" class="series-seasons-container"></div>
+
+          <div class="season-actions">
+            <button
+              type="button"
+              id="series-add-season-btn"
+              class="secondary-button"
+            >
+              + Season
+            </button>
+            <button type="submit" id="series-map-submit-btn">
+              Map seasons and episodes
+            </button>
+          </div>
+        </form>
+
+        <section class="result-section">
+          <h2>Result</h2>
+          <p id="series-map-status-line">No request sent yet.</p>
+          <pre id="series-map-response-box" aria-live="polite"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js?v=20260213a"></script>
+  </body>
+</html>

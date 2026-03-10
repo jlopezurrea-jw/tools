@@ -1,0 +1,10 @@
+{
+  "name": "jwx-internal-metadata-tool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static JWX metadata tool for direct JW Platform API calls",
+  "scripts": {
+    "start": "python3 -m http.server 3000 --directory public",
+    "dev": "python3 -m http.server 3000 --directory public"
+  }
+}
