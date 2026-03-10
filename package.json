@@ -1,0 +1,11 @@
+{
+  "name": "jwx-custom-content-type-service",
+  "version": "1.0.0",
+  "description": "Service and UI for building custom JWX content type metadata JSON.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JWX Custom Content Type Builder</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h1>JWX Custom Content Type Builder</h1>
+        <p class="subtitle">
+          Create a content type schema and export JSON for JWX dashboard upload.
+        </p>
+
+        <form id="builderForm">
+          <div class="row">
+            <label for="contentTypeName">Content Type Name</label>
+            <input id="contentTypeName" name="name" type="text" placeholder="e.g. VideoAssetMetadata" required />
+          </div>
+
+          <div class="row">
+            <label for="contentTypeId">Content Type ID (optional)</label>
+            <input id="contentTypeId" name="id" type="text" placeholder="auto-generated if empty" />
+          </div>
+
+          <div class="row">
+            <label for="contentTypeDescription">Description</label>
+            <textarea id="contentTypeDescription" name="description" rows="3" placeholder="What is this metadata schema used for?"></textarea>
+          </div>
+
+          <h2>Fields</h2>
+          <div id="fieldsContainer" class="fields"></div>
+          <button type="button" id="addFieldButton" class="secondary">Add Field</button>
+
+          <div class="actions">
+            <button type="submit">Generate JSON</button>
+            <button type="button" id="downloadButton" class="secondary" disabled>
+              Download JSON
+            </button>
+          </div>
+        </form>
+
+        <p id="message" class="message"></p>
+      </section>
+
+      <section class="card">
+        <h2>JSON Preview</h2>
+        <pre id="jsonPreview" class="preview">{}</pre>
+      </section>
+    </main>
+
+    <template id="fieldTemplate">
+      <article class="field-row">
+        <div class="field-header">
+          <h3>Field</h3>
+          <button type="button" data-action="remove">Remove</button>
+        </div>
+        <div class="grid">
+          <label>
+            Label
+            <input data-field="name" type="text" placeholder="e.g. Genre" required />
+          </label>
+          <label>
+            Key (optional)
+            <input data-field="key" type="text" placeholder="auto from label" />
+          </label>
+          <label>
+            Type
+            <select data-field="type"></select>
+          </label>
+          <label>
+            Display
+            <select data-field="display"></select>
+          </label>
+          <label class="checkbox">
+            <input data-field="required" type="checkbox" />
+            Required
+          </label>
+          <label>
+            Help text (optional)
+            <input data-field="helpText" type="text" placeholder="Shown in metadata editor" />
+          </label>
+          <label class="full-width options-wrapper hidden">
+            Enum options (comma separated)
+            <input data-field="options" type="text" placeholder="Sports, News, Documentary" />
+          </label>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
