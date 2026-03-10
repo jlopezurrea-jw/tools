@@ -58,3 +58,9 @@ The app will call JW APIs directly from the browser.
 
 Because this is a browser-only app, the API secret is used client-side.
 Use this only as an internal trusted tool and avoid exposing it publicly.
+
+## Troubleshooting
+
+- If you see `HTTP 501 Unsupported method ('POST')`, your browser is likely
+  running an older cached script that still targets `/api/*` backend routes.
+  Hard refresh (Ctrl/Cmd+Shift+R) and reload the page.
