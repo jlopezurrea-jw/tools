@@ -15,6 +15,9 @@ const timelinePanelEl = document.getElementById("timeline-panel");
 const timelineEl = document.getElementById("timeline");
 const adMarkerStatusEl = document.getElementById("ad-marker-status");
 const adMarkerDetailEl = document.getElementById("ad-marker-detail");
+const vodScanProgressWrapEl = document.getElementById("vod-scan-progress-wrap");
+const vodScanProgressBarEl = document.getElementById("vod-scan-progress-bar");
+const vodScanProgressLabelEl = document.getElementById("vod-scan-progress-label");
 
 const FETCH_TIMEOUT_MS = 15000;
 const POLL_INTERVAL_MS = 3000;
@@ -41,11 +44,21 @@ const state = {
   jwScriptPlayerIdLoaded: null,
   jwScriptPromise: null,
   jwSessionErrors: [],
+  vodScanRunning: false,
 };
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.style.color = isError ? "#9e1a1a" : "#1a1f2b";
+}
+
+function setVodScanProgress({ visible, percent = 0, label = "" }) {
+  if (!vodScanProgressWrapEl || !vodScanProgressBarEl || !vodScanProgressLabelEl) {
+    return;
+  }
+  vodScanProgressWrapEl.hidden = !visible;
+  vodScanProgressBarEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  vodScanProgressLabelEl.textContent = label || "Scanning...";
 }
 
 function clearChildren(node) {
@@ -1814,6 +1827,7 @@ function resetForNewInput(url) {
   if (eventSummaryBarEl) {
     eventSummaryBarEl.textContent = "No CUE markers detected yet.";
   }
+  setVodScanProgress({ visible: false, percent: 0, label: "" });
   adMarkerStatusEl.className = "marker-status marker-status-idle";
   adMarkerStatusEl.textContent = "No data yet";
   adMarkerDetailEl.textContent = "Run Analyze VOD Manifest or Analyze Live Manifest.";
@@ -1862,19 +1876,19 @@ async function setupJwPlayer(streamUrl) {
   const requestedPlayerId = jwPlayerIdInput.value.trim();
   if (!requestedPlayerId) {
     state.jwSessionErrors = ["Set your JW Player ID first."];
-    return;
+    return false;
   }
 
   try {
     await ensureJwLibrary();
   } catch (error) {
     state.jwSessionErrors = [error.message];
-    return;
+    return false;
   }
 
   if (!window.jwplayer) {
     state.jwSessionErrors = ["JW Player library loaded but jwplayer global is unavailable."];
-    return;
+    return false;
   }
 
   if (
@@ -1882,7 +1896,7 @@ async function setupJwPlayer(streamUrl) {
     state.jwConfiguredStreamUrl === streamUrl &&
     state.jwConfiguredPlayerId === requestedPlayerId
   ) {
-    return;
+    return true;
   }
 
   try {
@@ -1921,8 +1935,131 @@ async function setupJwPlayer(streamUrl) {
     state.jwPlayerInstance = player;
     state.jwConfiguredStreamUrl = streamUrl;
     state.jwConfiguredPlayerId = requestedPlayerId;
+    return true;
   } catch (error) {
     state.jwSessionErrors = [`JW setup failed: ${error.message}`];
+    return false;
+  }
+}
+
+function buildVodScanAnalysis(url, durationSeconds = null) {
+  return {
+    sourceType: "vod-jw-scan",
+    streamType: "vod-jw-scan",
+    manifestKind: "jw-player-seek-scan",
+    inspectedUrl: url,
+    isLive: false,
+    playlistWindowSeconds: Number.isFinite(durationSeconds) ? round(durationSeconds) : null,
+    targetDurationSeconds: null,
+    markers: [],
+    adBreaks: [],
+    diagnostics: {
+      info: [
+        "Analyze VOD Manifest mode uses JW Player seeks and metadata events only. No manifest proxy fetch is used.",
+      ],
+      warnings: [],
+      errors: [],
+    },
+    fetchedAt: toIsoNow(),
+    fetchMeta: {
+      proxyUsed: "not-used",
+    },
+  };
+}
+
+async function waitForVodDuration(player, timeoutMs = 20000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    let duration = null;
+    try {
+      duration = Number(player.getDuration());
+    } catch (_error) {
+      duration = null;
+    }
+    if (Number.isFinite(duration) && duration > 0) {
+      return duration;
+    }
+    await sleep(400);
+  }
+  throw new Error("Unable to determine VOD duration from JW Player.");
+}
+
+function buildVodScanPositions(durationSeconds) {
+  const positions = [];
+  const step = 10;
+  for (let position = 0; position <= durationSeconds; position += step) {
+    positions.push(Math.min(position, durationSeconds));
+  }
+  if (positions.length === 0 || positions[positions.length - 1] !== durationSeconds) {
+    positions.push(durationSeconds);
+  }
+  return positions;
+}
+
+async function runVodSeekScan(streamUrl) {
+  const playerReady = await setupJwPlayer(streamUrl);
+  if (!playerReady || !state.jwPlayerInstance) {
+    throw new Error(state.jwSessionErrors[0] || "JW Player could not be initialized for VOD scan.");
+  }
+
+  const player = state.jwPlayerInstance;
+  setVodScanProgress({
+    visible: true,
+    percent: 0,
+    label: "Initializing VOD scan...",
+  });
+
+  try {
+    if (typeof player.setMute === "function") {
+      player.setMute(true);
+    }
+    if (typeof player.play === "function") {
+      player.play();
+      await sleep(500);
+    }
+
+    const duration = await waitForVodDuration(player);
+    const positions = buildVodScanPositions(duration);
+
+    state.latest = buildVodScanAnalysis(streamUrl, duration);
+    render(state.latest);
+
+    for (let index = 0; index < positions.length; index += 1) {
+      const position = positions[index];
+      const percent = ((index + 1) / positions.length) * 100;
+      setVodScanProgress({
+        visible: true,
+        percent,
+        label: `Scanning ${formatTime(position)}s of ${formatTime(duration)}s`,
+      });
+
+      if (typeof player.seek === "function") {
+        player.seek(position);
+      }
+      await sleep(150);
+      if (typeof player.pause === "function") {
+        player.pause();
+      }
+
+      // Hold one second at each seek position to collect SCTE metadata callbacks.
+      await sleep(1000);
+    }
+
+    if (typeof player.pause === "function") {
+      player.pause();
+    }
+
+    setVodScanProgress({
+      visible: true,
+      percent: 100,
+      label: "VOD scan complete",
+    });
+    setTimeout(() => {
+      setVodScanProgress({ visible: false, percent: 0, label: "" });
+    }, 1200);
+  } catch (error) {
+    setVodScanProgress({ visible: false, percent: 0, label: "" });
+    throw error;
   }
 }
 
@@ -1974,13 +2111,20 @@ async function analyzeOnce(options = {}) {
   }
 
   state.inFlight = true;
-  setStatus(
-    mode === "vod"
-      ? "Analyzing VOD manifest (full manifest scan)..."
-      : "Analyzing live manifest from browser via CORS proxy...",
-  );
+  state.vodScanRunning = mode === "vod";
+  setStatus(mode === "vod" ? "Starting VOD seek scan..." : "Analyzing live manifest from browser via CORS proxy...");
 
   try {
+    if (mode === "vod") {
+      const targetUrl = normalized.toString();
+      state.latest = buildVodScanAnalysis(targetUrl, null);
+      render(state.latest);
+      await runVodSeekScan(targetUrl);
+      render(state.latest || buildVodScanAnalysis(targetUrl, null));
+      setStatus("VOD scan complete. Collected JW SCTE metadata across seek positions.");
+      return;
+    }
+
     const targetUrl = state.pollManifestUrl || normalized.toString();
     const analysis = await analyzeStream(targetUrl);
     analysis.inspectedUrl = targetUrl;
@@ -1999,6 +2143,7 @@ async function analyzeOnce(options = {}) {
     setStatus(`Error: ${makeFriendlyAnalysisError(error)}`, true);
   } finally {
     state.inFlight = false;
+    state.vodScanRunning = false;
   }
 }
 
@@ -2008,6 +2153,7 @@ function stopMonitoring() {
     clearInterval(state.timer);
     state.timer = null;
   }
+  setVodScanProgress({ visible: false, percent: 0, label: "" });
   startBtn.disabled = false;
   stopBtn.disabled = true;
   setStatus("Monitoring stopped.");

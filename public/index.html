@@ -41,6 +41,12 @@
             <button type="button" id="stop-monitoring" disabled>Stop</button>
           </div>
           <p class="helper-text">Manifest is polled every 3 seconds</p>
+          <div id="vod-scan-progress-wrap" class="vod-progress-wrap" hidden>
+            <div class="vod-progress-label" id="vod-scan-progress-label">Preparing VOD scan...</div>
+            <div class="vod-progress-track">
+              <div id="vod-scan-progress-bar" class="vod-progress-bar"></div>
+            </div>
+          </div>
         </form>
         <p id="status" class="status">Idle.</p>
       </section>

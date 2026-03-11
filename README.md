@@ -6,7 +6,8 @@ Static browser tool to monitor SCTE markers from **HLS** and **DASH** live strea
 ## What it does
 
 - Accepts an HLS (`.m3u8`) or DASH (`.mpd`) URL.
-- Polls the manifest continuously every 3 seconds to "listen" for marker updates.
+- Polls the **live** manifest continuously every 3 seconds to "listen" for marker updates.
+- For **Analyze VOD Manifest**, no manifest proxy fetch is used: the tool performs a JW Player seek-scan (0s, 10s, 20s, ...) to trigger timed metadata without manual viewing.
 - Detects common SCTE-related signals:
   - HLS: `#EXT-X-CUE-OUT`, `#EXT-X-CUE-IN`, `#EXT-X-CUE-OUT-CONT`, `#EXT-OATCLS-SCTE35`, `#EXT-X-SCTE35`, `#EXT-X-DATERANGE` with SCTE attributes.
   - DASH: `EventStream` entries (especially SCTE scheme IDs).
@@ -48,7 +49,7 @@ If you serve `public/` from a local static server, paste either of these:
 
 ## CORS proxy behavior
 
-Manifest fetching is done entirely in-browser via proxy URL prepending:
+Live manifest fetching is done entirely in-browser via proxy URL prepending:
 
 - `https://corsproxy.io/?<encoded-manifest-url>`
 - `https://api.allorigins.win/raw?url=<encoded-manifest-url>`
