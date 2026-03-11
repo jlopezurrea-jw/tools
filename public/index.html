@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCTE Marker Analyzer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>SCTE Marker Analyzer</h1>
+        <p>
+          Paste an HLS (.m3u8) or DASH (.mpd) URL to monitor ad-break markers and
+          troubleshooting diagnostics.
+        </p>
+      </header>
+
+      <section class="panel">
+        <form id="analyze-form">
+          <label for="stream-url">Stream URL</label>
+          <input
+            id="stream-url"
+            name="stream-url"
+            type="url"
+            placeholder="https://example/live/playlist.m3u8"
+            required
+          />
+
+          <div class="controls-row">
+            <label for="poll-interval">Poll every (seconds)</label>
+            <input id="poll-interval" type="number" min="2" max="120" value="8" />
+          </div>
+
+          <div class="button-row">
+            <button type="submit" id="analyze-once">Analyze Once</button>
+            <button type="button" id="start-monitoring">Start Monitoring</button>
+            <button type="button" id="stop-monitoring" disabled>Stop</button>
+          </div>
+        </form>
+        <p id="status" class="status">Idle.</p>
+      </section>
+
+      <section class="panel grid two-cols">
+        <div>
+          <h2>Stream Summary</h2>
+          <dl id="summary-list"></dl>
+        </div>
+        <div>
+          <h2>Troubleshooting</h2>
+          <ul id="diagnostics-list" class="diagnostics"></ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Ad Break Timeline</h2>
+        <div id="timeline" class="timeline"></div>
+      </section>
+
+      <section class="panel grid two-cols">
+        <div>
+          <h2>Detected Markers</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Offset (s)</th>
+                <th>Program Time</th>
+                <th>Tag</th>
+              </tr>
+            </thead>
+            <tbody id="markers-body"></tbody>
+          </table>
+        </div>
+        <div>
+          <h2>Ad Breaks</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Start (s)</th>
+                <th>End (s)</th>
+                <th>Duration (s)</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody id="breaks-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

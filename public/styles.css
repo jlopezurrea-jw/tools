@@ -1,0 +1,186 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f6f8fb;
+  color: #1a1f2b;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+header h1 {
+  margin: 0 0 0.25rem;
+}
+
+header p {
+  margin: 0 0 1rem;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #dbe2ef;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.two-cols {
+  grid-template-columns: 1fr 1fr;
+}
+
+label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+input[type="url"],
+input[type="number"] {
+  width: 100%;
+  border: 1px solid #bfc9de;
+  border-radius: 6px;
+  padding: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.controls-row {
+  max-width: 260px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+button {
+  border: 1px solid #2f4f99;
+  border-radius: 6px;
+  background: #3a63c9;
+  color: white;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
+
+button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  margin-top: 0.8rem;
+  font-size: 0.95rem;
+}
+
+#summary-list {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+#summary-list div {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 0.6rem;
+}
+
+#summary-list dt {
+  font-weight: 600;
+}
+
+.diagnostics {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.diag-warning {
+  color: #9a4b00;
+}
+
+.diag-error {
+  color: #9e1a1a;
+}
+
+.diag-info {
+  color: #23437a;
+}
+
+.timeline {
+  position: relative;
+  min-height: 74px;
+  border: 1px solid #ccd6ea;
+  border-radius: 6px;
+  background: linear-gradient(to right, #eef3fe 0%, #f8f9fd 100%);
+  overflow: hidden;
+}
+
+.timeline-base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 32px;
+  border-top: 2px solid #60739b;
+}
+
+.timeline-break {
+  position: absolute;
+  top: 24px;
+  height: 18px;
+  background: rgba(204, 65, 65, 0.65);
+  border: 1px solid #a83232;
+  border-radius: 4px;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 14px;
+  width: 2px;
+  height: 34px;
+  background: #1d3f91;
+}
+
+.timeline-label {
+  position: absolute;
+  top: 49px;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  color: #1d3f91;
+  white-space: nowrap;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid #dbe2ef;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  vertical-align: top;
+}
+
+th {
+  background: #f0f4fc;
+}
+
+@media (max-width: 960px) {
+  .two-cols {
+    grid-template-columns: 1fr;
+  }
+}
