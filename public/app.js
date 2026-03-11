@@ -502,6 +502,20 @@ function mergeSourcesForDisplay(existingSource, incomingSource) {
   return existing;
 }
 
+function getOffsetSourcePriority(offsetSource) {
+  if (!offsetSource) {
+    return 0;
+  }
+  const normalized = String(offsetSource).toLowerCase();
+  if (normalized.includes("metadatatime")) {
+    return 3;
+  }
+  if (normalized.includes("start") || normalized.includes("offset") || normalized.includes("begin")) {
+    return 2;
+  }
+  return 1;
+}
+
 function getStatusBadgeForSignal(signalType) {
   if (signalType === "CUE-OUT" || signalType === "SCTE35-OUT") {
     return { label: "✅ CUE-OUT", className: "event-status-pill event-status-out" };
@@ -1226,6 +1240,7 @@ function addEventLogEntry({
   source,
   type,
   offsetSeconds = null,
+  offsetSource = null,
   programDateTime = null,
   details = "",
   rawDetails = null,
@@ -1246,6 +1261,7 @@ function addEventLogEntry({
     breakId: scteAttrData.breakId,
     macroCompleteness: scteAttrData.completenessScore,
     offsetSeconds: roundedOffsetSeconds,
+    offsetSource: offsetSource || null,
     programDateTime,
     details,
     rawDetails,
@@ -1325,8 +1341,18 @@ function addEventLogEntry({
     if (!mergeTarget.programDateTime && incomingRecord.programDateTime) {
       mergeTarget.programDateTime = incomingRecord.programDateTime;
     }
-    if (!Number.isFinite(Number(mergeTarget.offsetSeconds)) && Number.isFinite(Number(incomingRecord.offsetSeconds))) {
+    const incomingOffset = Number(incomingRecord.offsetSeconds);
+    const existingOffset = Number(mergeTarget.offsetSeconds);
+    const incomingPriority = getOffsetSourcePriority(incomingRecord.offsetSource);
+    const existingPriority = getOffsetSourcePriority(mergeTarget.offsetSource);
+    if (
+      Number.isFinite(incomingOffset) &&
+      (!Number.isFinite(existingOffset) ||
+        incomingPriority > existingPriority ||
+        (incomingPriority === existingPriority && Math.abs(incomingOffset) > Math.abs(existingOffset)))
+    ) {
       mergeTarget.offsetSeconds = incomingRecord.offsetSeconds;
+      mergeTarget.offsetSource = incomingRecord.offsetSource;
     }
 
     mergeTarget.lastSeenAt = now;
@@ -1367,6 +1393,7 @@ function ingestManifestEvents(markers) {
       source: "[Manifest Parse]",
       type: marker.type,
       offsetSeconds: marker.offsetSeconds,
+      offsetSource: "manifest-offset",
       programDateTime: marker.programDateTime,
       details: compactDetails(marker.tag, 180),
       rawDetails: {
@@ -1435,6 +1462,7 @@ function extractJwEventTiming(payload) {
   const result = {
     playbackPosition: null,
     programDateTime: null,
+    sourcePath: null,
   };
 
   const positionPaths = [
@@ -1475,6 +1503,7 @@ function extractJwEventTiming(payload) {
     const parsed = parseIsoOrNumericTime(value);
     if (Number.isFinite(parsed)) {
       result.playbackPosition = parsed;
+      result.sourcePath = path;
       break;
     }
   }
@@ -1538,6 +1567,12 @@ function registerJwEvent(eventType, payload) {
   const timing = extractJwEventTiming(normalizedJwEvent.combinedPayload);
   const position = timing.playbackPosition;
   const programDateTime = timing.programDateTime;
+  console.debug("[SCTE Debug] JW timing extraction", {
+    eventType,
+    playbackPosition: position,
+    sourcePath: timing.sourcePath,
+    programDateTime,
+  });
   if (derivedSignalFromPayload === "Unknown") {
     console.warn("[SCTE Debug] Unknown signal payload", rawJwEventObject);
   }
@@ -1546,6 +1581,7 @@ function registerJwEvent(eventType, payload) {
     source: "[JW Event]",
     type: eventType,
     offsetSeconds: position,
+    offsetSource: timing.sourcePath || null,
     programDateTime,
     details: describeJwEvent(eventType, normalizedJwEvent.wrappedPayload),
     rawDetails: normalizedJwEvent.combinedPayload,
@@ -1578,7 +1614,7 @@ function buildDerivedAdBreaksFromEventLogRows(rows) {
     }
     seen.add(key);
 
-    breaks.push({
+    const breakObject = {
       id: row.breakId ? `derived-${row.breakId}` : `derived-${breaks.length + 1}`,
       startOffsetSeconds: round(start),
       endOffsetSeconds: round(start + duration),
@@ -1587,7 +1623,9 @@ function buildDerivedAdBreaksFromEventLogRows(rows) {
       endProgramDateTime: null,
       state: "closed",
       source: "derived-from-cue-out-duration",
-    });
+    };
+    console.log("[SCTE Debug] Derived Ad Break", breakObject);
+    breaks.push(breakObject);
   });
 
   return breaks.sort((a, b) => Number(a.startOffsetSeconds || 0) - Number(b.startOffsetSeconds || 0));
