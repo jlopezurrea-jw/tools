@@ -4,15 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SCTE Marker Analyzer</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="container">
       <header>
         <h1>SCTE Marker Analyzer</h1>
         <p>
-          Paste an HLS (.m3u8) or DASH (.mpd) URL to monitor ad-break markers and
-          troubleshooting diagnostics.
+          Paste an HLS (.m3u8) or DASH (.mpd) URL to monitor manifest SCTE markers and
+          compare them with JW Player timed metadata events during playback.
         </p>
       </header>
 
@@ -27,9 +27,23 @@
             required
           />
 
-          <div class="controls-row">
-            <label for="poll-interval">Poll every (seconds)</label>
-            <input id="poll-interval" type="number" min="2" max="120" value="8" />
+          <div class="grid three-cols">
+            <div class="controls-row">
+              <label for="poll-interval">Poll every (seconds)</label>
+              <input id="poll-interval" type="number" min="2" max="120" value="8" />
+            </div>
+            <div class="controls-row">
+              <label for="proxy-mode">CORS Proxy</label>
+              <select id="proxy-mode">
+                <option value="corsproxy">corsproxy.io</option>
+                <option value="allorigins">allorigins.win</option>
+                <option value="auto">Auto fallback</option>
+              </select>
+            </div>
+            <div class="controls-row">
+              <label for="jw-library-key">JW Player Library Key</label>
+              <input id="jw-library-key" type="text" value="YOUR_KEY" />
+            </div>
           </div>
 
           <div class="button-row">
@@ -57,19 +71,29 @@
         <div id="timeline" class="timeline"></div>
       </section>
 
+      <section class="panel">
+        <h2>JW Player</h2>
+        <div id="jw-player" class="jw-player-box"></div>
+        <p class="helper-text">
+          JW library URL template: <code>https://cdn.jwplayer.com/libraries/YOUR_KEY.js</code>
+          (replace <code>YOUR_KEY</code> with your actual JW Player key).
+        </p>
+      </section>
+
       <section class="panel grid two-cols">
         <div>
-          <h2>Detected Markers</h2>
+          <h2>Event Log (Manifest + JW)</h2>
           <table>
             <thead>
               <tr>
+                <th>Source</th>
                 <th>Type</th>
                 <th>Offset (s)</th>
                 <th>Program Time</th>
-                <th>Tag</th>
+                <th>Details</th>
               </tr>
             </thead>
-            <tbody id="markers-body"></tbody>
+            <tbody id="events-body"></tbody>
           </table>
         </div>
         <div>
@@ -90,6 +114,7 @@
       </section>
     </main>
 
-    <script src="/app.js"></script>
+    <script src="https://cdn.jwplayer.com/libraries/YOUR_KEY.js"></script>
+    <script src="./app.js"></script>
   </body>
 </html>

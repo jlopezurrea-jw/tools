@@ -36,6 +36,10 @@ header p {
   gap: 1rem;
 }
 
+.three-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .two-cols {
   grid-template-columns: 1fr 1fr;
 }
@@ -47,7 +51,9 @@ label {
 }
 
 input[type="url"],
-input[type="number"] {
+input[type="number"],
+input[type="text"],
+select {
   width: 100%;
   border: 1px solid #bfc9de;
   border-radius: 6px;
@@ -82,6 +88,20 @@ button[disabled] {
 .status {
   margin-top: 0.8rem;
   font-size: 0.95rem;
+}
+
+.jw-player-box {
+  width: 100%;
+  min-height: 250px;
+  background: #0b1222;
+  border: 1px solid #2b3550;
+  border-radius: 6px;
+}
+
+.helper-text {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #334c7c;
 }
 
 #summary-list {
@@ -181,6 +201,10 @@ th {
 
 @media (max-width: 960px) {
   .two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .three-cols {
     grid-template-columns: 1fr;
   }
 }
