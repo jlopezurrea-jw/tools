@@ -1,6 +1,5 @@
 const form = document.getElementById("analyze-form");
 const urlInput = document.getElementById("stream-url");
-const pollInput = document.getElementById("poll-interval");
 const jwPlayerIdInput = document.getElementById("jw-player-id");
 const statusEl = document.getElementById("status");
 
@@ -19,6 +18,10 @@ const adMarkerDetailEl = document.getElementById("ad-marker-detail");
 
 const FETCH_TIMEOUT_MS = 15000;
 const DEFAULT_PROXY_MODE = "auto";
+const POLL_INTERVAL_MS = 3000;
+const MANIFEST_FETCH_RETRY_ATTEMPTS = 3;
+const MANIFEST_FETCH_RETRY_DELAY_MS = 2000;
+const EVENT_PLAYBACK_DEDUPE_WINDOW_SECONDS = 3;
 
 const state = {
   polling: false,
@@ -28,6 +31,7 @@ const state = {
   activeInputUrl: null,
   pollManifestUrl: null,
   eventLogMap: new Map(),
+  seenManifestSegments: new Set(),
   jwPlayerInstance: null,
   jwConfiguredStreamUrl: null,
   jwConfiguredPlayerId: null,
@@ -329,11 +333,39 @@ function extractScteAttributeData(rawDetails) {
     parts.push(`SCTE35: ${compactDetails(sctePayload, 28)}`);
   }
 
+  const breakId =
+    attrs.ID ||
+    attrs.EVENTID ||
+    attrs["BREAK-ID"] ||
+    attrs["X-BREAK-ID"] ||
+    attrs["X-ASSET-ID"] ||
+    attrs["X-AD-ID"] ||
+    attrs.CUE ||
+    null;
+
+  const completenessScore =
+    parts.length +
+    Object.values(attrs).filter((value) => value !== undefined && value !== null && value !== "").length;
+
   return {
     attrs,
     durationSeconds,
+    breakId: breakId ? String(breakId) : null,
+    completenessScore,
     summary: parts.length ? parts.join(", ") : "-",
   };
+}
+
+function durationsEquivalent(left, right) {
+  const leftFinite = Number.isFinite(left);
+  const rightFinite = Number.isFinite(right);
+  if (!leftFinite && !rightFinite) {
+    return true;
+  }
+  if (leftFinite !== rightFinite) {
+    return false;
+  }
+  return Math.abs(left - right) <= 0.25;
 }
 
 function getStatusBadgeForSignal(signalType) {
@@ -453,6 +485,7 @@ function makeMarker({
   tag,
   programDateTime,
   durationSeconds = null,
+  segmentUrl = null,
   details = {},
 }) {
   const signature = `${type}|${round(offsetSeconds)}|${programDateTime || "na"}|${tag}`;
@@ -466,6 +499,7 @@ function makeMarker({
     lineNumber,
     tag,
     durationSeconds: durationSeconds === null ? null : round(durationSeconds),
+    segmentUrl,
     details,
   };
 }
@@ -515,7 +549,11 @@ function buildProxyUrl(proxyName, originalUrl) {
   return `https://corsproxy.io/?${encodedManifestUrl}`;
 }
 
-async function fetchTextViaProxy(url) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchTextViaProxySingleAttempt(url) {
   const proxyCandidates = getProxyCandidates(DEFAULT_PROXY_MODE);
   const errors = [];
 
@@ -550,6 +588,27 @@ async function fetchTextViaProxy(url) {
   }
 
   throw new Error(`Unable to fetch manifest via proxy. ${errors.join(" | ")}`);
+}
+
+async function fetchTextViaProxy(url) {
+  const attemptErrors = [];
+
+  for (let attempt = 1; attempt <= MANIFEST_FETCH_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchTextViaProxySingleAttempt(url);
+    } catch (error) {
+      attemptErrors.push(`attempt ${attempt}: ${error.message}`);
+      if (attempt < MANIFEST_FETCH_RETRY_ATTEMPTS) {
+        await sleep(MANIFEST_FETCH_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  throw new Error(
+    `Unable to fetch manifest via proxy after ${MANIFEST_FETCH_RETRY_ATTEMPTS} attempts. ${attemptErrors.join(
+      " | ",
+    )}`,
+  );
 }
 
 function parseHlsVariants(baseUrl, lines) {
@@ -599,6 +658,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
   const lines = text.split(/\r?\n/);
   const markers = [];
   const adBreaks = [];
+  const pendingSegmentMarkers = [];
 
   let mediaOffsetSeconds = 0;
   let pendingSegmentDuration = 0;
@@ -607,6 +667,25 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
   let isLive = true;
   let parseErrors = 0;
   let openBreak = null;
+  let lastSegmentUrl = null;
+
+  const registerMarker = (marker) => {
+    markers.push(marker);
+    pendingSegmentMarkers.push(marker);
+  };
+
+  const attachPendingSegmentToMarkers = (segmentUrl) => {
+    if (!segmentUrl) {
+      return;
+    }
+    pendingSegmentMarkers.forEach((marker) => {
+      if (!marker.segmentUrl) {
+        marker.segmentUrl = segmentUrl;
+      }
+    });
+    pendingSegmentMarkers.length = 0;
+    lastSegmentUrl = segmentUrl;
+  };
 
   const closeOpenBreak = (endOffsetSeconds, endProgramDateTime, sourceTag) => {
     if (!openBreak) {
@@ -670,7 +749,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
         const duration =
           Number(cueAttrs.DURATION || cueInfo) || Number(cueAttrs["PLANNED-DURATION"]) || null;
 
-        markers.push(
+        registerMarker(
           makeMarker({
             sourceUrl: url,
             type: "cue-out",
@@ -692,7 +771,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
           startProgramDateTime: currentProgramDateTime,
         };
       } else if (line.startsWith("#EXT-X-CUE-IN")) {
-        markers.push(
+        registerMarker(
           makeMarker({
             sourceUrl: url,
             type: "cue-in",
@@ -711,7 +790,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
           closeOpenBreak(mediaOffsetSeconds, currentProgramDateTime, "cue-in");
         }
       } else if (line.startsWith("#EXT-X-CUE-OUT-CONT")) {
-        markers.push(
+        registerMarker(
           makeMarker({
             sourceUrl: url,
             type: "cue-out-cont",
@@ -722,7 +801,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
           }),
         );
       } else if (line.startsWith("#EXT-OATCLS-SCTE35") || line.startsWith("#EXT-X-SCTE35")) {
-        markers.push(
+        registerMarker(
           makeMarker({
             sourceUrl: url,
             type: "scte35",
@@ -738,7 +817,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
           attrs["SCTE35-OUT"] || attrs["SCTE35-IN"] || attrs["SCTE35-CMD"] || attrs.CUE;
 
         if (hasScteMarker) {
-          markers.push(
+          registerMarker(
             makeMarker({
               sourceUrl: url,
               type: "daterange",
@@ -770,10 +849,17 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
       continue;
     }
 
+    const currentSegmentUrl = absolutizeUrl(url, line);
+    attachPendingSegmentToMarkers(currentSegmentUrl);
+
     if (pendingSegmentDuration > 0) {
       mediaOffsetSeconds += pendingSegmentDuration;
       pendingSegmentDuration = 0;
     }
+  }
+
+  if (pendingSegmentMarkers.length > 0 && lastSegmentUrl) {
+    attachPendingSegmentToMarkers(lastSegmentUrl);
   }
 
   if (openBreak) {
@@ -1023,45 +1109,103 @@ function addEventLogEntry({
   uniqueKey,
 }) {
   const now = toIsoNow();
-  const key =
-    uniqueKey ||
-    `${source}|${type}|${round(offsetSeconds) || "na"}|${programDateTime || "na"}|${details}`;
-  const existing = state.eventLogMap.get(key);
-
-  if (existing) {
-    const latestAttr = extractScteAttributeData(rawDetails || details || "");
-    if (!existing.durationSeconds && latestAttr.durationSeconds) {
-      existing.durationSeconds = latestAttr.durationSeconds;
-    }
-    if ((!existing.macroSummary || existing.macroSummary === "-") && latestAttr.summary !== "-") {
-      existing.macroSummary = latestAttr.summary;
-    }
-    existing.lastSeenAt = now;
-    existing.seenCount += 1;
-    state.eventLogMap.set(key, existing);
-    state.lastScteEventAt = now;
-    state.lastScteEventType = existing.signalType || existing.type;
-    state.lastScteEventSource = existing.source;
-    return false;
-  }
-
   const signalType = deriveSignalTypeFromRaw(rawDetails || details || type);
   const scteAttrData = extractScteAttributeData(rawDetails || details || "");
-
-  state.eventLogMap.set(key, {
+  const roundedOffsetSeconds = round(offsetSeconds);
+  const incomingRecord = {
     source,
     type,
     signalType,
     macroSummary: scteAttrData.summary,
     durationSeconds: scteAttrData.durationSeconds,
-    offsetSeconds: round(offsetSeconds),
+    breakId: scteAttrData.breakId,
+    macroCompleteness: scteAttrData.completenessScore,
+    offsetSeconds: roundedOffsetSeconds,
     programDateTime,
     details,
     rawDetails,
     firstSeenAt: now,
     lastSeenAt: now,
     seenCount: 1,
-  });
+  };
+
+  const candidateByKey = uniqueKey ? state.eventLogMap.get(uniqueKey) : null;
+  let mergeTargetKey = candidateByKey ? uniqueKey : null;
+  let mergeTarget = candidateByKey || null;
+
+  if (!mergeTarget) {
+    for (const [candidateKey, candidate] of state.eventLogMap.entries()) {
+      if (candidate.signalType !== signalType) {
+        continue;
+      }
+
+      const candidateBreakId = candidate.breakId || null;
+      const incomingBreakId = incomingRecord.breakId || null;
+      if (!candidateBreakId || !incomingBreakId) {
+        continue;
+      }
+      if (candidateBreakId !== incomingBreakId) {
+        continue;
+      }
+
+      if (!durationsEquivalent(candidate.durationSeconds, incomingRecord.durationSeconds)) {
+        continue;
+      }
+
+      const candidateOffset = Number(candidate.offsetSeconds);
+      const incomingOffset = Number(incomingRecord.offsetSeconds);
+      if (!Number.isFinite(candidateOffset) || !Number.isFinite(incomingOffset)) {
+        continue;
+      }
+      if (Math.abs(candidateOffset - incomingOffset) > EVENT_PLAYBACK_DEDUPE_WINDOW_SECONDS) {
+        continue;
+      }
+
+      mergeTargetKey = candidateKey;
+      mergeTarget = candidate;
+      break;
+    }
+  }
+
+  if (mergeTarget && mergeTargetKey) {
+    const incomingCompleteness = Number(incomingRecord.macroCompleteness || 0);
+    const existingCompleteness = Number(mergeTarget.macroCompleteness || 0);
+    if (incomingCompleteness > existingCompleteness) {
+      mergeTarget.macroSummary = incomingRecord.macroSummary;
+      mergeTarget.rawDetails = incomingRecord.rawDetails;
+      mergeTarget.details = incomingRecord.details;
+      mergeTarget.macroCompleteness = incomingCompleteness;
+    }
+
+    if (!mergeTarget.durationSeconds && incomingRecord.durationSeconds) {
+      mergeTarget.durationSeconds = incomingRecord.durationSeconds;
+    }
+    if (!mergeTarget.breakId && incomingRecord.breakId) {
+      mergeTarget.breakId = incomingRecord.breakId;
+    }
+    if (!mergeTarget.programDateTime && incomingRecord.programDateTime) {
+      mergeTarget.programDateTime = incomingRecord.programDateTime;
+    }
+    if (!Number.isFinite(Number(mergeTarget.offsetSeconds)) && Number.isFinite(Number(incomingRecord.offsetSeconds))) {
+      mergeTarget.offsetSeconds = incomingRecord.offsetSeconds;
+    }
+
+    mergeTarget.lastSeenAt = now;
+    mergeTarget.seenCount += 1;
+    state.eventLogMap.set(mergeTargetKey, mergeTarget);
+    state.lastScteEventAt = now;
+    state.lastScteEventType = mergeTarget.signalType || mergeTarget.type;
+    state.lastScteEventSource = mergeTarget.source;
+    return false;
+  }
+
+  const entryKey =
+    uniqueKey ||
+    `${source}|${signalType}|${incomingRecord.breakId || "na"}|${
+      incomingRecord.durationSeconds ?? "na"
+    }|${incomingRecord.offsetSeconds ?? "na"}|${now}`;
+
+  state.eventLogMap.set(entryKey, incomingRecord);
 
   state.lastScteEventAt = now;
   state.lastScteEventType = signalType !== "Unknown" ? signalType : type;
@@ -1072,7 +1216,13 @@ function addEventLogEntry({
 
 function ingestManifestEvents(markers) {
   let newCount = 0;
+  const segmentsToMarkSeen = new Set();
+
   markers.forEach((marker) => {
+    if (marker.segmentUrl && state.seenManifestSegments.has(marker.segmentUrl)) {
+      return;
+    }
+
     const added = addEventLogEntry({
       source: "[Manifest Parse]",
       type: marker.type,
@@ -1082,6 +1232,7 @@ function ingestManifestEvents(markers) {
       rawDetails: {
         markerType: marker.type,
         tag: marker.tag,
+        segmentUrl: marker.segmentUrl || null,
         attributes: marker.details,
       },
       uniqueKey: `manifest|${marker.signature}`,
@@ -1089,7 +1240,14 @@ function ingestManifestEvents(markers) {
     if (added) {
       newCount += 1;
     }
+
+    if (marker.segmentUrl) {
+      segmentsToMarkSeen.add(marker.segmentUrl);
+    }
   });
+
+  segmentsToMarkSeen.forEach((segmentUrl) => state.seenManifestSegments.add(segmentUrl));
+
   return newCount;
 }
 
@@ -1573,6 +1731,7 @@ function resetForNewInput(url) {
   state.pollManifestUrl = null;
   state.latest = null;
   state.eventLogMap.clear();
+  state.seenManifestSegments.clear();
   state.jwSessionErrors = [];
   state.jwConfiguredStreamUrl = null;
   state.jwConfiguredPlayerId = null;
@@ -1593,7 +1752,7 @@ function resetForNewInput(url) {
   }
   adMarkerStatusEl.className = "marker-status marker-status-idle";
   adMarkerStatusEl.textContent = "No data yet";
-  adMarkerDetailEl.textContent = "Run Analyze Once or Start Monitoring.";
+  adMarkerDetailEl.textContent = "Run Analyze VOD Manifest or Analyze Live Manifest.";
 }
 
 async function ensureJwLibrary() {
@@ -1786,7 +1945,6 @@ function stopMonitoring() {
 }
 
 function startMonitoring() {
-  const intervalSec = Math.max(2, Number(pollInput.value) || 8);
   if (state.polling) {
     return;
   }
@@ -1794,12 +1952,12 @@ function startMonitoring() {
   state.polling = true;
   startBtn.disabled = true;
   stopBtn.disabled = false;
-  setStatus(`Monitoring started. Polling every ${intervalSec} second(s).`);
+  setStatus("Monitoring started. Manifest polling every 3 second(s).");
 
   analyzeOnce();
   state.timer = setInterval(() => {
     analyzeOnce();
-  }, intervalSec * 1000);
+  }, POLL_INTERVAL_MS);
 }
 
 form.addEventListener("submit", (event) => {

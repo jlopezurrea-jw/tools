@@ -29,10 +29,6 @@
 
           <div class="grid two-cols">
             <div class="controls-row">
-              <label for="poll-interval">Poll every (seconds)</label>
-              <input id="poll-interval" type="number" min="2" max="120" value="8" />
-            </div>
-            <div class="controls-row">
               <label for="jw-player-id">JW Player ID</label>
               <input id="jw-player-id" type="text" placeholder="YOUR_PLAYER_ID" />
               <p class="helper-text">Find your Player ID in the JW Player dashboard under Players</p>
@@ -40,10 +36,11 @@
           </div>
 
           <div class="button-row">
-            <button type="submit" id="analyze-once">Analyze Once</button>
-            <button type="button" id="start-monitoring">Start Monitoring</button>
+            <button type="submit" id="analyze-once">Analyze VOD Manifest</button>
+            <button type="button" id="start-monitoring">Analyze Live Manifest</button>
             <button type="button" id="stop-monitoring" disabled>Stop</button>
           </div>
+          <p class="helper-text">Manifest is polled every 3 seconds</p>
         </form>
         <p id="status" class="status">Idle.</p>
       </section>

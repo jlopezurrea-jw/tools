@@ -6,7 +6,7 @@ Static browser tool to monitor SCTE markers from **HLS** and **DASH** live strea
 ## What it does
 
 - Accepts an HLS (`.m3u8`) or DASH (`.mpd`) URL.
-- Polls the manifest continuously to "listen" for marker updates.
+- Polls the manifest continuously every 3 seconds to "listen" for marker updates.
 - Detects common SCTE-related signals:
   - HLS: `#EXT-X-CUE-OUT`, `#EXT-X-CUE-IN`, `#EXT-X-CUE-OUT-CONT`, `#EXT-OATCLS-SCTE35`, `#EXT-X-SCTE35`, `#EXT-X-DATERANGE` with SCTE attributes.
   - DASH: `EventStream` entries (especially SCTE scheme IDs).
