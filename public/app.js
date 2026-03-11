@@ -17,11 +17,10 @@ const adMarkerStatusEl = document.getElementById("ad-marker-status");
 const adMarkerDetailEl = document.getElementById("ad-marker-detail");
 
 const FETCH_TIMEOUT_MS = 15000;
-const DEFAULT_PROXY_MODE = "auto";
 const POLL_INTERVAL_MS = 3000;
 const MANIFEST_FETCH_RETRY_ATTEMPTS = 3;
 const MANIFEST_FETCH_RETRY_DELAY_MS = 2000;
-const EVENT_PLAYBACK_DEDUPE_WINDOW_SECONDS = 3;
+const EVENT_PLAYBACK_DEDUPE_WINDOW_SECONDS = 5;
 
 const state = {
   polling: false,
@@ -228,10 +227,44 @@ function parseInlineAttributesFromText(text) {
 }
 
 function deriveSignalTypeFromRaw(rawDetails) {
+  const knownPayloadCandidates = [];
+  if (rawDetails && typeof rawDetails === "object") {
+    const metadata = rawDetails.metadata || rawDetails.meta || {};
+    const cue = rawDetails.cue || {};
+    const timedMetadata = rawDetails.timedMetadata || {};
+    knownPayloadCandidates.push(
+      rawDetails.content,
+      rawDetails.tag,
+      rawDetails.data,
+      rawDetails.message,
+      rawDetails.description,
+      rawDetails.metadataType,
+      rawDetails.eventType,
+      metadata.tag,
+      metadata.content,
+      metadata.data,
+      metadata.text,
+      metadata.message,
+      cue.tag,
+      cue.content,
+      cue.data,
+      timedMetadata.tag,
+      timedMetadata.content,
+      timedMetadata.data,
+    );
+  }
+
   const tokens = [];
   collectPayloadText(rawDetails, tokens);
+  knownPayloadCandidates.forEach((item) => collectPayloadText(item, tokens));
   const normalized = tokens.join(" ").toUpperCase();
 
+  if (normalized.includes("ADBREAKSTART")) {
+    return "CUE-OUT";
+  }
+  if (normalized.includes("ADBREAKEND")) {
+    return "CUE-IN";
+  }
   if (normalized.includes("CUE-OUT-CONT")) {
     return "CUE-OUT-CONT";
   }
@@ -366,6 +399,25 @@ function durationsEquivalent(left, right) {
     return false;
   }
   return Math.abs(left - right) <= 0.25;
+}
+
+function mergeSourcesForDisplay(existingSource, incomingSource) {
+  const existing = String(existingSource || "");
+  const incoming = String(incomingSource || "");
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming || existing === incoming) {
+    return existing;
+  }
+
+  const hasManifest = existing.includes("Manifest") || incoming.includes("Manifest");
+  const hasJw = existing.includes("JW") || incoming.includes("JW");
+  if (hasManifest && hasJw) {
+    return "[JW + Manifest]";
+  }
+
+  return existing;
 }
 
 function getStatusBadgeForSignal(signalType) {
@@ -529,13 +581,6 @@ function detectManifestType(url, text, contentType) {
   return "unknown";
 }
 
-function getProxyCandidates(mode = DEFAULT_PROXY_MODE) {
-  if (mode === "auto") {
-    return ["corsproxy", "allorigins"];
-  }
-  return [mode];
-}
-
 function encodeManifestUrlForProxy(originalUrl) {
   // Encode the complete manifest URL as one unit so signed query strings stay intact.
   return encodeURIComponent(String(originalUrl));
@@ -546,6 +591,9 @@ function buildProxyUrl(proxyName, originalUrl) {
   if (proxyName === "allorigins") {
     return `https://api.allorigins.win/raw?url=${encodedManifestUrl}`;
   }
+  if (proxyName === "corsproxy-org") {
+    return `https://corsproxy.org/?${encodedManifestUrl}`;
+  }
   return `https://corsproxy.io/?${encodedManifestUrl}`;
 }
 
@@ -553,51 +601,44 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchTextViaProxySingleAttempt(url) {
-  const proxyCandidates = getProxyCandidates(DEFAULT_PROXY_MODE);
-  const errors = [];
+async function fetchTextViaProxyAttempt(url, proxyName) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const proxyUrl = buildProxyUrl(proxyName, url);
 
-  for (const proxyName of proxyCandidates) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const proxyUrl = buildProxyUrl(proxyName, url);
-
-    try {
-      const response = await fetch(proxyUrl, {
-        signal: controller.signal,
-        redirect: "follow",
-        cache: "no-store",
-        headers: {
-          accept: "application/vnd.apple.mpegurl,application/dash+xml,application/xml,text/plain,*/*",
-        },
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`${proxyName} failed (${response.status})`);
-      }
-      return {
-        text,
-        contentType: response.headers.get("content-type") || "",
-        proxyUsed: proxyName,
-      };
-    } catch (error) {
-      errors.push(`${proxyName}: ${error.message}`);
-    } finally {
-      clearTimeout(timeout);
+  try {
+    const response = await fetch(proxyUrl, {
+      signal: controller.signal,
+      redirect: "follow",
+      cache: "no-store",
+      headers: {
+        accept: "application/vnd.apple.mpegurl,application/dash+xml,application/xml,text/plain,*/*",
+      },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`${proxyName} failed (${response.status})`);
     }
+    return {
+      text,
+      contentType: response.headers.get("content-type") || "",
+      proxyUsed: proxyName,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  throw new Error(`Unable to fetch manifest via proxy. ${errors.join(" | ")}`);
 }
 
 async function fetchTextViaProxy(url) {
+  const proxyRotation = ["corsproxy", "allorigins", "corsproxy-org"];
   const attemptErrors = [];
 
   for (let attempt = 1; attempt <= MANIFEST_FETCH_RETRY_ATTEMPTS; attempt += 1) {
+    const proxyName = proxyRotation[(attempt - 1) % proxyRotation.length];
     try {
-      return await fetchTextViaProxySingleAttempt(url);
+      return await fetchTextViaProxyAttempt(url, proxyName);
     } catch (error) {
-      attemptErrors.push(`attempt ${attempt}: ${error.message}`);
+      attemptErrors.push(`attempt ${attempt} (${proxyName}): ${error.message}`);
       if (attempt < MANIFEST_FETCH_RETRY_ATTEMPTS) {
         await sleep(MANIFEST_FETCH_RETRY_DELAY_MS);
       }
@@ -1109,7 +1150,9 @@ function addEventLogEntry({
   uniqueKey,
 }) {
   const now = toIsoNow();
-  const signalType = deriveSignalTypeFromRaw(rawDetails || details || type);
+  const normalizedRawDetails =
+    rawDetails && typeof rawDetails === "object" ? { ...rawDetails, eventType: type } : rawDetails;
+  const signalType = deriveSignalTypeFromRaw(normalizedRawDetails || details || type);
   const scteAttrData = extractScteAttributeData(rawDetails || details || "");
   const roundedOffsetSeconds = round(offsetSeconds);
   const incomingRecord = {
@@ -1129,25 +1172,35 @@ function addEventLogEntry({
     seenCount: 1,
   };
 
-  const candidateByKey = uniqueKey ? state.eventLogMap.get(uniqueKey) : null;
-  let mergeTargetKey = candidateByKey ? uniqueKey : null;
-  let mergeTarget = candidateByKey || null;
+  let mergeTargetKey = null;
+  let mergeTarget = null;
+
+  if (incomingRecord.breakId) {
+    for (const [candidateKey, candidate] of state.eventLogMap.entries()) {
+      if ((candidate.breakId || null) === incomingRecord.breakId) {
+        mergeTargetKey = candidateKey;
+        mergeTarget = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!mergeTarget && uniqueKey) {
+    const candidateByKey = state.eventLogMap.get(uniqueKey);
+    if (candidateByKey) {
+      mergeTargetKey = uniqueKey;
+      mergeTarget = candidateByKey;
+    }
+  }
 
   if (!mergeTarget) {
     for (const [candidateKey, candidate] of state.eventLogMap.entries()) {
-      if (candidate.signalType !== signalType) {
+      if (candidate.breakId || incomingRecord.breakId) {
         continue;
       }
-
-      const candidateBreakId = candidate.breakId || null;
-      const incomingBreakId = incomingRecord.breakId || null;
-      if (!candidateBreakId || !incomingBreakId) {
+      if (candidate.signalType !== incomingRecord.signalType) {
         continue;
       }
-      if (candidateBreakId !== incomingBreakId) {
-        continue;
-      }
-
       if (!durationsEquivalent(candidate.durationSeconds, incomingRecord.durationSeconds)) {
         continue;
       }
@@ -1183,6 +1236,10 @@ function addEventLogEntry({
     if (!mergeTarget.breakId && incomingRecord.breakId) {
       mergeTarget.breakId = incomingRecord.breakId;
     }
+    mergeTarget.source = mergeSourcesForDisplay(mergeTarget.source, incomingRecord.source);
+    if (mergeTarget.signalType === "Unknown" && incomingRecord.signalType !== "Unknown") {
+      mergeTarget.signalType = incomingRecord.signalType;
+    }
     if (!mergeTarget.programDateTime && incomingRecord.programDateTime) {
       mergeTarget.programDateTime = incomingRecord.programDateTime;
     }
@@ -1200,6 +1257,7 @@ function addEventLogEntry({
   }
 
   const entryKey =
+    (incomingRecord.breakId ? `break:${incomingRecord.breakId}` : null) ||
     uniqueKey ||
     `${source}|${signalType}|${incomingRecord.breakId || "na"}|${
       incomingRecord.durationSeconds ?? "na"
@@ -1261,14 +1319,20 @@ function getJwPosition(player) {
 }
 
 function registerJwEvent(eventType, payload) {
+  console.debug("[SCTE Debug] Raw JW event", eventType, payload);
+
   const isAdBreakEvent = eventType === "adBreakStart" || eventType === "adBreakEnd";
   const isTimedMetadataEvent = eventType === "meta" || eventType === "metadataCueParsed";
+  const derivedSignalFromPayload = deriveSignalTypeFromRaw({
+    ...(payload && typeof payload === "object" ? payload : {}),
+    eventType,
+  });
 
   if (!isAdBreakEvent && !isTimedMetadataEvent) {
     return;
   }
 
-  if (isTimedMetadataEvent && !hasScteSignal(payload)) {
+  if (isTimedMetadataEvent && !hasScteSignal(payload) && derivedSignalFromPayload === "Unknown") {
     return;
   }
 
@@ -1867,7 +1931,7 @@ function makeFriendlyAnalysisError(error) {
   if (message.includes("Unable to fetch manifest via proxy")) {
     return (
       "Could not fetch the manifest through CORS proxies. " +
-      "Auto fallback is applied automatically (corsproxy.io then allorigins). " +
+      "Auto fallback is applied automatically (corsproxy.io, then allorigins, then corsproxy.org). " +
       "Verify the stream URL still works in JW Player and keep signed query parameters unchanged."
     );
   }
@@ -1880,7 +1944,8 @@ function makeFriendlyAnalysisError(error) {
   return message;
 }
 
-async function analyzeOnce() {
+async function analyzeOnce(options = {}) {
+  const { mode = "vod" } = options;
   if (state.inFlight) {
     return;
   }
@@ -1909,7 +1974,11 @@ async function analyzeOnce() {
   }
 
   state.inFlight = true;
-  setStatus("Analyzing stream from browser via CORS proxy...");
+  setStatus(
+    mode === "vod"
+      ? "Analyzing VOD manifest (full manifest scan)..."
+      : "Analyzing live manifest from browser via CORS proxy...",
+  );
 
   try {
     const targetUrl = state.pollManifestUrl || normalized.toString();
@@ -1920,8 +1989,8 @@ async function analyzeOnce() {
     state.pollManifestUrl = analysis.selectedMediaUrl || targetUrl;
 
     const newManifestEvents = ingestManifestEvents(analysis.markers || []);
-    await setupJwPlayer(normalized.toString());
     render(analysis);
+    void setupJwPlayer(normalized.toString());
 
     setStatus(
       `Analysis complete. ${analysis.markers?.length || 0} manifest marker(s), ${newManifestEvents} new manifest events this cycle.`,
@@ -1954,15 +2023,18 @@ function startMonitoring() {
   stopBtn.disabled = false;
   setStatus("Monitoring started. Manifest polling every 3 second(s).");
 
-  analyzeOnce();
+  analyzeOnce({ mode: "live" });
   state.timer = setInterval(() => {
-    analyzeOnce();
+    analyzeOnce({ mode: "live" });
   }, POLL_INTERVAL_MS);
 }
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  analyzeOnce();
+  if (state.polling) {
+    stopMonitoring();
+  }
+  analyzeOnce({ mode: "vod" });
 });
 
 startBtn.addEventListener("click", startMonitoring);
