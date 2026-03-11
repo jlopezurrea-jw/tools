@@ -25,6 +25,8 @@ const state = {
   pollManifestUrl: null,
   eventLogMap: new Map(),
   jwPlayerInstance: null,
+  jwConfiguredStreamUrl: null,
+  jwConfiguredPlayerId: null,
   jwScriptPlayerIdLoaded: null,
   jwScriptPromise: null,
   jwSessionErrors: [],
@@ -77,6 +79,38 @@ function safeJsonStringify(value, maxLength = 300) {
   } catch (_error) {
     return String(value);
   }
+}
+
+function collectPayloadText(value, bucket, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) {
+    return;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    bucket.push(String(value));
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectPayloadText(item, bucket, depth + 1));
+    return;
+  }
+
+  if (typeof value === "object") {
+    Object.entries(value).forEach(([key, item]) => {
+      bucket.push(String(key));
+      collectPayloadText(item, bucket, depth + 1);
+    });
+  }
+}
+
+function hasScteSignal(value) {
+  const tokens = [];
+  collectPayloadText(value, tokens);
+  const normalized = tokens.join(" ").toLowerCase();
+  return /(scte|scte35|cue-?out|cue-?in|splice|segmentation|time_signal|adbreak)/.test(
+    normalized,
+  );
 }
 
 function parseIsoDuration(iso) {
@@ -601,7 +635,12 @@ function walkDashForEvents(node, periodStartSeconds, sourceUrl, markers, adBreak
       const offsetSeconds = periodStartSeconds + presentationTimeTicks / timescale;
       const durationSeconds = Number.isFinite(durationTicks) ? durationTicks / timescale : null;
       const payloadHint = (eventNode.textContent || "").trim().replace(/\s+/g, " ").slice(0, 140);
-      const markerType = schemeIdUri.toLowerCase().includes("scte") ? "scte35-event" : "dash-event";
+      const scteFingerprint = `${schemeIdUri} ${value || ""} ${payloadHint || ""}`;
+      const isScteEvent = hasScteSignal(scteFingerprint);
+      if (!isScteEvent) {
+        return;
+      }
+      const markerType = "scte35-event";
 
       markers.push(
         makeMarker({
@@ -802,6 +841,17 @@ function getJwPosition(player) {
 }
 
 function registerJwEvent(eventType, payload) {
+  const isAdBreakEvent = eventType === "adBreakStart" || eventType === "adBreakEnd";
+  const isTimedMetadataEvent = eventType === "meta" || eventType === "metadataCueParsed";
+
+  if (!isAdBreakEvent && !isTimedMetadataEvent) {
+    return;
+  }
+
+  if (isTimedMetadataEvent && !hasScteSignal(payload)) {
+    return;
+  }
+
   const position = getJwPosition(state.jwPlayerInstance);
   addEventLogEntry({
     source: "[JW Event]",
@@ -990,6 +1040,8 @@ function resetForNewInput(url) {
   state.latest = null;
   state.eventLogMap.clear();
   state.jwSessionErrors = [];
+  state.jwConfiguredStreamUrl = null;
+  state.jwConfiguredPlayerId = null;
   clearChildren(eventsBody);
   clearChildren(breaksBody);
   clearChildren(summaryList);
@@ -999,10 +1051,6 @@ function resetForNewInput(url) {
 
 async function ensureJwLibrary() {
   const playerId = jwPlayerIdInput.value.trim();
-  if (window.jwplayer && !playerId) {
-    return;
-  }
-
   if (!playerId) {
     throw new Error("Set your JW Player ID first.");
   }
@@ -1031,6 +1079,7 @@ async function ensureJwLibrary() {
       resolve();
     };
     script.onerror = () => {
+      state.jwScriptPromise = null;
       reject(new Error("Unable to load JW Player library from CDN."));
     };
     document.head.appendChild(script);
@@ -1040,6 +1089,12 @@ async function ensureJwLibrary() {
 }
 
 async function setupJwPlayer(streamUrl) {
+  const requestedPlayerId = jwPlayerIdInput.value.trim();
+  if (!requestedPlayerId) {
+    state.jwSessionErrors = ["Set your JW Player ID first."];
+    return;
+  }
+
   try {
     await ensureJwLibrary();
   } catch (error) {
@@ -1049,6 +1104,14 @@ async function setupJwPlayer(streamUrl) {
 
   if (!window.jwplayer) {
     state.jwSessionErrors = ["JW Player library loaded but jwplayer global is unavailable."];
+    return;
+  }
+
+  if (
+    state.jwPlayerInstance &&
+    state.jwConfiguredStreamUrl === streamUrl &&
+    state.jwConfiguredPlayerId === requestedPlayerId
+  ) {
     return;
   }
 
@@ -1079,7 +1142,6 @@ async function setupJwPlayer(streamUrl) {
     player.on("error", (payload) => {
       const detail = payload?.message || safeJsonStringify(payload);
       state.jwSessionErrors = [detail];
-      registerJwEvent("error", payload);
       if (state.latest) {
         render(state.latest);
       }
@@ -1087,6 +1149,8 @@ async function setupJwPlayer(streamUrl) {
 
     state.jwSessionErrors = [];
     state.jwPlayerInstance = player;
+    state.jwConfiguredStreamUrl = streamUrl;
+    state.jwConfiguredPlayerId = requestedPlayerId;
   } catch (error) {
     state.jwSessionErrors = [`JW setup failed: ${error.message}`];
   }

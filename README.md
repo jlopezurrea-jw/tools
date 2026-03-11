@@ -20,6 +20,7 @@ Static browser tool to monitor SCTE markers from **HLS** and **DASH** live strea
   - `adBreakStart`
   - `adBreakEnd`
   - `metadataCueParsed`
+  (filtered to SCTE-related payloads only)
   with clear source labels:
   - `[Manifest Parse]`
   - `[JW Event]`
