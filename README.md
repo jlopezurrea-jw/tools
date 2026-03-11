@@ -47,7 +47,7 @@ Manifest fetching is done entirely in-browser via proxy URL prepending:
 - `https://corsproxy.io/?<encoded-manifest-url>`
 - `https://api.allorigins.win/raw?url=<encoded-manifest-url>`
 
-You can choose a proxy in the UI, or use auto fallback mode.
+Proxy handling is automatic and hidden in the UI: the app tries `corsproxy.io` first and silently falls back to `allorigins` if needed.
 If your URL is signed/authenticated, use it exactly as provided (adding/changing query params can invalidate the signature).
 
 ## JW Player setup

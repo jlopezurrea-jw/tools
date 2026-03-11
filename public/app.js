@@ -1,7 +1,6 @@
 const form = document.getElementById("analyze-form");
 const urlInput = document.getElementById("stream-url");
 const pollInput = document.getElementById("poll-interval");
-const proxyModeInput = document.getElementById("proxy-mode");
 const jwPlayerIdInput = document.getElementById("jw-player-id");
 const statusEl = document.getElementById("status");
 
@@ -17,6 +16,7 @@ const adMarkerStatusEl = document.getElementById("ad-marker-status");
 const adMarkerDetailEl = document.getElementById("ad-marker-detail");
 
 const FETCH_TIMEOUT_MS = 15000;
+const DEFAULT_PROXY_MODE = "auto";
 
 const state = {
   polling: false,
@@ -337,22 +337,28 @@ function detectManifestType(url, text, contentType) {
   return "unknown";
 }
 
-function getProxyCandidates(mode) {
+function getProxyCandidates(mode = DEFAULT_PROXY_MODE) {
   if (mode === "auto") {
     return ["corsproxy", "allorigins"];
   }
   return [mode];
 }
 
-function buildProxyUrl(proxyName, originalUrl) {
-  if (proxyName === "allorigins") {
-    return `https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`;
-  }
-  return `https://corsproxy.io/?${encodeURIComponent(originalUrl)}`;
+function encodeManifestUrlForProxy(originalUrl) {
+  // Encode the complete manifest URL as one unit so signed query strings stay intact.
+  return encodeURIComponent(String(originalUrl));
 }
 
-async function fetchTextViaProxy(url, mode) {
-  const proxyCandidates = getProxyCandidates(mode);
+function buildProxyUrl(proxyName, originalUrl) {
+  const encodedManifestUrl = encodeManifestUrlForProxy(originalUrl);
+  if (proxyName === "allorigins") {
+    return `https://api.allorigins.win/raw?url=${encodedManifestUrl}`;
+  }
+  return `https://corsproxy.io/?${encodedManifestUrl}`;
+}
+
+async function fetchTextViaProxy(url) {
+  const proxyCandidates = getProxyCandidates(DEFAULT_PROXY_MODE);
   const errors = [];
 
   for (const proxyName of proxyCandidates) {
@@ -642,7 +648,7 @@ function analyzeHlsMediaPlaylist(url, text, diagnostics) {
   };
 }
 
-async function analyzeHls(url, text, proxyMode) {
+async function analyzeHls(url, text) {
   const diagnostics = {
     info: [],
     warnings: [],
@@ -658,7 +664,7 @@ async function analyzeHls(url, text, proxyMode) {
       `Master playlist detected (${variants.length} variants). Polling selected media playlist: ${bestVariant.url}`,
     );
 
-    const child = await fetchTextViaProxy(bestVariant.url, proxyMode);
+    const child = await fetchTextViaProxy(bestVariant.url);
     const media = analyzeHlsMediaPlaylist(bestVariant.url, child.text, diagnostics);
 
     return {
@@ -822,12 +828,12 @@ function analyzeDash(url, text) {
   };
 }
 
-async function analyzeStream(url, proxyMode) {
-  const root = await fetchTextViaProxy(url, proxyMode);
+async function analyzeStream(url) {
+  const root = await fetchTextViaProxy(url);
   const type = detectManifestType(url, root.text, root.contentType);
 
   if (type === "hls") {
-    const hls = await analyzeHls(url, root.text, proxyMode);
+    const hls = await analyzeHls(url, root.text);
     return {
       ...hls,
       fetchedAt: toIsoNow(),
@@ -1285,7 +1291,8 @@ function makeFriendlyAnalysisError(error) {
   if (message.includes("Unable to fetch manifest via proxy")) {
     return (
       "Could not fetch the manifest through CORS proxies. " +
-      "Try proxy mode Auto, verify the stream URL still works in JW Player, and avoid changing signed query parameters."
+      "Auto fallback is applied automatically (corsproxy.io then allorigins). " +
+      "Verify the stream URL still works in JW Player and keep signed query parameters unchanged."
     );
   }
   if (message.includes("403") || message.includes("401")) {
@@ -1330,7 +1337,7 @@ async function analyzeOnce() {
 
   try {
     const targetUrl = state.pollManifestUrl || normalized.toString();
-    const analysis = await analyzeStream(targetUrl, proxyModeInput.value);
+    const analysis = await analyzeStream(targetUrl);
     analysis.inspectedUrl = targetUrl;
 
     state.latest = analysis;
