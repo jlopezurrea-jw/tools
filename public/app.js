@@ -1439,8 +1439,13 @@ function extractJwEventTiming(payload) {
 
   const positionPaths = [
     "wrappedPayload.metadataTime",
+    "wrappedPayload.metadata.metadataTime",
+    "wrappedPayload.payload.metadataTime",
     "payload.metadataTime",
+    "payload.payload.metadataTime",
+    "payload.metadata.metadataTime",
     "metadataTime",
+    "metadata.metadataTime",
     "start",
     "offset",
     "begin",
@@ -1549,8 +1554,77 @@ function registerJwEvent(eventType, payload) {
   renderEventLog();
 }
 
-function setSummary(data) {
+function buildDerivedAdBreaksFromEventLogRows(rows) {
+  const breaks = [];
+  const seen = new Set();
+
+  rows.forEach((row) => {
+    const isCueOut = row.signalType === "CUE-OUT" || row.signalType === "SCTE35-OUT";
+    if (!isCueOut) {
+      return;
+    }
+
+    const start = Number(row.offsetSeconds);
+    const duration = Number(row.durationSeconds);
+    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) {
+      return;
+    }
+
+    const key =
+      row.breakId ||
+      `start:${Math.round(start * 10) / 10}|duration:${Math.round(duration * 10) / 10}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+
+    breaks.push({
+      id: row.breakId ? `derived-${row.breakId}` : `derived-${breaks.length + 1}`,
+      startOffsetSeconds: round(start),
+      endOffsetSeconds: round(start + duration),
+      durationSeconds: round(duration),
+      startProgramDateTime: row.programDateTime || null,
+      endProgramDateTime: null,
+      state: "closed",
+      source: "derived-from-cue-out-duration",
+    });
+  });
+
+  return breaks.sort((a, b) => Number(a.startOffsetSeconds || 0) - Number(b.startOffsetSeconds || 0));
+}
+
+function getEffectiveAdBreaks(data, rows) {
+  const baseBreaks = Array.isArray(data?.adBreaks) ? data.adBreaks : [];
+  const derivedBreaks = buildDerivedAdBreaksFromEventLogRows(rows);
+  if (!baseBreaks.length) {
+    return derivedBreaks;
+  }
+
+  const merged = [...baseBreaks];
+  const hasEquivalent = (candidate) =>
+    merged.some((item) => {
+      const startA = Number(item.startOffsetSeconds);
+      const durA = Number(item.durationSeconds);
+      const startB = Number(candidate.startOffsetSeconds);
+      const durB = Number(candidate.durationSeconds);
+      if (!Number.isFinite(startA) || !Number.isFinite(startB)) {
+        return false;
+      }
+      return Math.abs(startA - startB) <= 0.3 && durationsEquivalent(durA, durB);
+    });
+
+  derivedBreaks.forEach((item) => {
+    if (!hasEquivalent(item)) {
+      merged.push(item);
+    }
+  });
+
+  return merged.sort((a, b) => Number(a.startOffsetSeconds || 0) - Number(b.startOffsetSeconds || 0));
+}
+
+function setSummary(data, effectiveAdBreaks = null) {
   clearChildren(summaryList);
+  const adBreakCount = effectiveAdBreaks ? effectiveAdBreaks.length : data.adBreaks?.length || 0;
   const entries = [
     ["Detected Type", `${data.sourceType?.toUpperCase() || "-"}`],
     ["Manifest Kind", data.manifestKind || "-"],
@@ -1562,7 +1636,7 @@ function setSummary(data) {
     ["Target Duration (s)", formatTime(data.targetDurationSeconds)],
     ["Fetched At", data.fetchedAt || "-"],
     ["Manifest Markers", String(data.markers?.length || 0)],
-    ["Ad Breaks", String(data.adBreaks?.length || 0)],
+    ["Ad Breaks", String(adBreakCount)],
     ["Last SCTE Event", state.lastScteEventAt ? `${state.lastScteEventType} @ ${state.lastScteEventAt}` : "-"],
   ];
 
@@ -1731,9 +1805,9 @@ function renderEventLog() {
   });
 }
 
-function setAdBreaks(data) {
+function setAdBreaks(adBreaks) {
   clearChildren(breaksBody);
-  (data.adBreaks || []).forEach((adBreak, index) => {
+  (adBreaks || []).forEach((adBreak, index) => {
     const tr = document.createElement("tr");
     const cells = [
       String(index + 1),
@@ -1790,9 +1864,9 @@ function getCueOutDurationFromMarkers(markers, offsetSeconds) {
   return bestDuration ? bestDuration.value : null;
 }
 
-function buildRenderableTimelineBreaks(data) {
+function buildRenderableTimelineBreaks(data, sourceBreaks = data.adBreaks || []) {
   const renderable = [];
-  (data.adBreaks || []).forEach((adBreak) => {
+  (sourceBreaks || []).forEach((adBreak) => {
     const start = Number(adBreak.startOffsetSeconds);
     if (!Number.isFinite(start)) {
       return;
@@ -1870,10 +1944,10 @@ function getTimelineWindow(data, renderableBreaks, markerLines) {
   return Math.max(configuredWindow, breakMax, markerMax, 60);
 }
 
-function setTimeline(data) {
+function setTimeline(data, sourceBreaks) {
   clearChildren(timelineEl);
 
-  const renderableBreaks = buildRenderableTimelineBreaks(data);
+  const renderableBreaks = buildRenderableTimelineBreaks(data, sourceBreaks);
   if (!renderableBreaks.length) {
     if (timelinePanelEl) {
       timelinePanelEl.hidden = true;
@@ -1941,8 +2015,9 @@ function setTimeline(data) {
   });
 }
 
-function setAdMarkerStatus(data) {
-  const hasOpenManifestBreak = (data.adBreaks || []).some((item) => item.state === "open");
+function setAdMarkerStatus(data, effectiveAdBreaks = null) {
+  const breaks = effectiveAdBreaks || data.adBreaks || [];
+  const hasOpenManifestBreak = breaks.some((item) => item.state === "open");
   const active = state.jwAdBreakActive || hasOpenManifestBreak;
   const nowMs = Date.now();
   const recentWindowMs = 2 * 60 * 1000;
@@ -1975,12 +2050,15 @@ function setAdMarkerStatus(data) {
 }
 
 function render(data) {
-  setSummary(data);
+  const rows = Array.from(state.eventLogMap.values());
+  const effectiveAdBreaks = getEffectiveAdBreaks(data, rows);
+
+  setSummary(data, effectiveAdBreaks);
   setDiagnostics(data);
-  setAdMarkerStatus(data);
+  setAdMarkerStatus(data, effectiveAdBreaks);
   renderEventLog();
-  setAdBreaks(data);
-  setTimeline(data);
+  setAdBreaks(effectiveAdBreaks);
+  setTimeline(data, effectiveAdBreaks);
 }
 
 function resetForNewInput(url) {
