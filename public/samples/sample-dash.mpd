@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD
+  xmlns="urn:mpeg:dash:schema:mpd:2011"
+  type="dynamic"
+  availabilityStartTime="2026-03-10T23:58:00Z"
+  minimumUpdatePeriod="PT5S"
+  minBufferTime="PT1.5S"
+  profiles="urn:mpeg:dash:profile:isoff-live:2011">
+  <Period id="1" start="PT0S">
+    <EventStream schemeIdUri="urn:scte:scte35:2013:xml" value="splice_insert" timescale="1">
+      <Event id="event-1" presentationTime="14" duration="30">
+        <Signal>OUT</Signal>
+      </Event>
+      <Event id="event-2" presentationTime="44" duration="0">
+        <Signal>IN</Signal>
+      </Event>
+    </EventStream>
+  </Period>
+</MPD>
