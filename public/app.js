@@ -13,6 +13,8 @@ const diagnosticsList = document.getElementById("diagnostics-list");
 const eventsBody = document.getElementById("events-body");
 const breaksBody = document.getElementById("breaks-body");
 const timelineEl = document.getElementById("timeline");
+const adMarkerStatusEl = document.getElementById("ad-marker-status");
+const adMarkerDetailEl = document.getElementById("ad-marker-detail");
 
 const FETCH_TIMEOUT_MS = 15000;
 
@@ -27,6 +29,10 @@ const state = {
   jwPlayerInstance: null,
   jwConfiguredStreamUrl: null,
   jwConfiguredPlayerId: null,
+  jwAdBreakActive: false,
+  lastScteEventAt: null,
+  lastScteEventType: null,
+  lastScteEventSource: null,
   jwScriptPlayerIdLoaded: null,
   jwScriptPromise: null,
   jwSessionErrors: [],
@@ -108,9 +114,81 @@ function hasScteSignal(value) {
   const tokens = [];
   collectPayloadText(value, tokens);
   const normalized = tokens.join(" ").toLowerCase();
-  return /(scte|scte35|cue-?out|cue-?in|splice|segmentation|time_signal|adbreak)/.test(
+  return /(scte|scte35|cue-?out|cue-?in|splice|segmentation|time_signal|adbreak|daterange)/.test(
     normalized,
   );
+}
+
+function stripVolatileFields(value) {
+  const volatileKeys = new Set([
+    "metadataTime",
+    "time",
+    "timestamp",
+    "position",
+    "playbackPosition",
+    "currentTime",
+    "utcTime",
+    "localTime",
+    "receivedAt",
+  ]);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => stripVolatileFields(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const normalized = {};
+  Object.keys(value)
+    .sort()
+    .forEach((key) => {
+      if (volatileKeys.has(key)) {
+        return;
+      }
+      normalized[key] = stripVolatileFields(value[key]);
+    });
+  return normalized;
+}
+
+function buildStableJwPayloadSignature(payload) {
+  return safeJsonStringify(stripVolatileFields(payload), 260);
+}
+
+function compactDetails(value, maxLen = 180) {
+  if (!value) {
+    return "-";
+  }
+  const normalized = String(value).replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLen)}...`;
+}
+
+function describeJwEvent(eventType, payload) {
+  if (eventType === "adBreakStart") {
+    return "Ad break started";
+  }
+  if (eventType === "adBreakEnd") {
+    return "Ad break ended";
+  }
+
+  const tokens = [];
+  collectPayloadText(payload, tokens);
+  const combined = tokens.join(" ");
+  const scteHexMatch = combined.match(/0x[0-9a-fA-F]{16,}/);
+  if (scteHexMatch) {
+    return `SCTE payload ${compactDetails(scteHexMatch[0], 90)}`;
+  }
+
+  const daterangeMatch = combined.match(/ID="?[^,\s"]+/i);
+  if (daterangeMatch) {
+    return `Timed metadata ${compactDetails(daterangeMatch[0], 90)}`;
+  }
+
+  return compactDetails(safeJsonStringify(stripVolatileFields(payload), 180), 180);
 }
 
 function parseIsoDuration(iso) {
@@ -201,17 +279,6 @@ function absolutizeUrl(baseUrl, child) {
   }
 }
 
-function withCacheBust(url) {
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.set("_scte_ts", String(Date.now()));
-    return parsed.toString();
-  } catch (_error) {
-    const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}_scte_ts=${Date.now()}`;
-  }
-}
-
 function resolveProgramDateTime(anchor, mediaOffsetSeconds) {
   if (!anchor || !Number.isFinite(anchor.epochMs)) {
     return null;
@@ -297,6 +364,10 @@ async function fetchTextViaProxy(url, mode) {
       const response = await fetch(proxyUrl, {
         signal: controller.signal,
         redirect: "follow",
+        cache: "no-store",
+        headers: {
+          accept: "application/vnd.apple.mpegurl,application/dash+xml,application/xml,text/plain,*/*",
+        },
       });
       const text = await response.text();
       if (!response.ok) {
@@ -587,7 +658,7 @@ async function analyzeHls(url, text, proxyMode) {
       `Master playlist detected (${variants.length} variants). Polling selected media playlist: ${bestVariant.url}`,
     );
 
-    const child = await fetchTextViaProxy(withCacheBust(bestVariant.url), proxyMode);
+    const child = await fetchTextViaProxy(bestVariant.url, proxyMode);
     const media = analyzeHlsMediaPlaylist(bestVariant.url, child.text, diagnostics);
 
     return {
@@ -752,7 +823,7 @@ function analyzeDash(url, text) {
 }
 
 async function analyzeStream(url, proxyMode) {
-  const root = await fetchTextViaProxy(withCacheBust(url), proxyMode);
+  const root = await fetchTextViaProxy(url, proxyMode);
   const type = detectManifestType(url, root.text, root.contentType);
 
   if (type === "hls") {
@@ -810,6 +881,10 @@ function addEventLogEntry({
     seenCount: 1,
   });
 
+  state.lastScteEventAt = now;
+  state.lastScteEventType = type;
+  state.lastScteEventSource = source;
+
   return true;
 }
 
@@ -821,7 +896,7 @@ function ingestManifestEvents(markers) {
       type: marker.type,
       offsetSeconds: marker.offsetSeconds,
       programDateTime: marker.programDateTime,
-      details: marker.tag,
+      details: compactDetails(marker.tag, 180),
       uniqueKey: `manifest|${marker.signature}`,
     });
     if (added) {
@@ -852,14 +927,21 @@ function registerJwEvent(eventType, payload) {
     return;
   }
 
+  if (eventType === "adBreakStart") {
+    state.jwAdBreakActive = true;
+  } else if (eventType === "adBreakEnd") {
+    state.jwAdBreakActive = false;
+  }
+
   const position = getJwPosition(state.jwPlayerInstance);
+  const stableSignature = buildStableJwPayloadSignature(payload);
   addEventLogEntry({
     source: "[JW Event]",
     type: eventType,
     offsetSeconds: position,
     programDateTime: null,
-    details: safeJsonStringify(payload),
-    uniqueKey: `jw|${eventType}|${round(position)}|${safeJsonStringify(payload, 220)}`,
+    details: describeJwEvent(eventType, payload),
+    uniqueKey: `jw|${eventType}|${stableSignature}`,
   });
   renderEventLog();
 }
@@ -878,6 +960,7 @@ function setSummary(data) {
     ["Fetched At", data.fetchedAt || "-"],
     ["Manifest Markers", String(data.markers?.length || 0)],
     ["Ad Breaks", String(data.adBreaks?.length || 0)],
+    ["Last SCTE Event", state.lastScteEventAt ? `${state.lastScteEventType} @ ${state.lastScteEventAt}` : "-"],
   ];
 
   entries.forEach(([label, value]) => {
@@ -1026,9 +1109,43 @@ function setTimeline(data) {
   });
 }
 
+function setAdMarkerStatus(data) {
+  const hasOpenManifestBreak = (data.adBreaks || []).some((item) => item.state === "open");
+  const active = state.jwAdBreakActive || hasOpenManifestBreak;
+  const nowMs = Date.now();
+  const recentWindowMs = 2 * 60 * 1000;
+  const lastEventMs = state.lastScteEventAt ? Date.parse(state.lastScteEventAt) : null;
+  const isRecent =
+    Number.isFinite(lastEventMs) && nowMs - lastEventMs <= recentWindowMs;
+
+  adMarkerStatusEl.className = "marker-status";
+
+  if (active) {
+    adMarkerStatusEl.classList.add("marker-status-active");
+    adMarkerStatusEl.textContent = "AD BREAK ACTIVE";
+    adMarkerDetailEl.textContent =
+      "SCTE ad break is currently active (from manifest and/or JW event signals).";
+    return;
+  }
+
+  if (isRecent) {
+    adMarkerStatusEl.classList.add("marker-status-recent");
+    adMarkerStatusEl.textContent = "MARKER DETECTED RECENTLY";
+    adMarkerDetailEl.textContent = `Last marker: ${state.lastScteEventType || "unknown"} from ${
+      state.lastScteEventSource || "unknown source"
+    } at ${state.lastScteEventAt}.`;
+    return;
+  }
+
+  adMarkerStatusEl.classList.add("marker-status-clear");
+  adMarkerStatusEl.textContent = "NO RECENT AD MARKER";
+  adMarkerDetailEl.textContent = "No SCTE marker detected in the recent monitoring window.";
+}
+
 function render(data) {
   setSummary(data);
   setDiagnostics(data);
+  setAdMarkerStatus(data);
   renderEventLog();
   setAdBreaks(data);
   setTimeline(data);
@@ -1042,11 +1159,18 @@ function resetForNewInput(url) {
   state.jwSessionErrors = [];
   state.jwConfiguredStreamUrl = null;
   state.jwConfiguredPlayerId = null;
+  state.jwAdBreakActive = false;
+  state.lastScteEventAt = null;
+  state.lastScteEventType = null;
+  state.lastScteEventSource = null;
   clearChildren(eventsBody);
   clearChildren(breaksBody);
   clearChildren(summaryList);
   clearChildren(diagnosticsList);
   clearChildren(timelineEl);
+  adMarkerStatusEl.className = "marker-status marker-status-idle";
+  adMarkerStatusEl.textContent = "No data yet";
+  adMarkerDetailEl.textContent = "Run Analyze Once or Start Monitoring.";
 }
 
 async function ensureJwLibrary() {
@@ -1156,6 +1280,23 @@ async function setupJwPlayer(streamUrl) {
   }
 }
 
+function makeFriendlyAnalysisError(error) {
+  const message = error?.message || "Unknown error";
+  if (message.includes("Unable to fetch manifest via proxy")) {
+    return (
+      "Could not fetch the manifest through CORS proxies. " +
+      "Try proxy mode Auto, verify the stream URL still works in JW Player, and avoid changing signed query parameters."
+    );
+  }
+  if (message.includes("403") || message.includes("401")) {
+    return (
+      "Manifest request was rejected (auth/signature issue). " +
+      "If this is a signed URL, ensure it has not expired and use the exact original URL."
+    );
+  }
+  return message;
+}
+
 async function analyzeOnce() {
   if (state.inFlight) {
     return;
@@ -1203,7 +1344,7 @@ async function analyzeOnce() {
       `Analysis complete. ${analysis.markers?.length || 0} manifest marker(s), ${newManifestEvents} new manifest events this cycle.`,
     );
   } catch (error) {
-    setStatus(`Error: ${error.message}`, true);
+    setStatus(`Error: ${makeFriendlyAnalysisError(error)}`, true);
   } finally {
     state.inFlight = false;
   }

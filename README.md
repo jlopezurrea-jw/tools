@@ -14,6 +14,10 @@ Static browser tool to monitor SCTE markers from **HLS** and **DASH** live strea
   - playlist offset seconds
   - program date time (when available)
 - Highlights ad breaks in a timeline and tables.
+- Shows a simple **Ad Marker Status** indicator:
+  - `AD BREAK ACTIVE`
+  - `MARKER DETECTED RECENTLY`
+  - `NO RECENT AD MARKER`
 - Provides troubleshooting diagnostics (warnings, errors, and informational hints).
 - Integrates JW Player events into the event log:
   - `meta`
@@ -44,6 +48,7 @@ Manifest fetching is done entirely in-browser via proxy URL prepending:
 - `https://api.allorigins.win/raw?url=<encoded-manifest-url>`
 
 You can choose a proxy in the UI, or use auto fallback mode.
+If your URL is signed/authenticated, use it exactly as provided (adding/changing query params can invalidate the signature).
 
 ## JW Player setup
 
