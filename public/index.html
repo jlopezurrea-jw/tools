@@ -82,14 +82,16 @@
       <section class="panel grid two-cols">
         <div>
           <h2>Event Log (SCTE Only)</h2>
+          <div id="event-summary-bar" class="event-summary-bar">No CUE markers detected yet.</div>
           <table>
             <thead>
               <tr>
                 <th>Source</th>
-                <th>Type</th>
-                <th>Offset (s)</th>
-                <th>Program Time</th>
-                <th>Details</th>
+                <th>Signal Type</th>
+                <th>Status</th>
+                <th>Wall Clock Time</th>
+                <th>Playback Position</th>
+                <th>Macros / Attributes</th>
               </tr>
             </thead>
             <tbody id="events-body"></tbody>

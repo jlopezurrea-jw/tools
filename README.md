@@ -28,6 +28,12 @@ Static browser tool to monitor SCTE markers from **HLS** and **DASH** live strea
   with clear source labels:
   - `[Manifest Parse]`
   - `[JW Event]`
+- Event Log includes engineer-focused fields:
+  - Wall Clock Time (UTC detect time)
+  - Playback Position
+  - Signal Type (`CUE-OUT`, `CUE-IN`, `CUE-OUT-CONT`, `SCTE35-OUT`, `SCTE35-IN`, `Unknown`)
+  - Macros / Attributes summary
+  - Per-row status badges and CUE pairing summary bar
 
 ## Run as a static site
 

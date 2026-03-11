@@ -104,6 +104,77 @@ button[disabled] {
   color: #334c7c;
 }
 
+.event-summary-bar {
+  margin: 0 0 0.65rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 6px;
+  background: #eef3fe;
+  border: 1px solid #c7d5f4;
+  font-size: 0.9rem;
+}
+
+.summary-chip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  margin-right: 0.45rem;
+  margin-bottom: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+.summary-chip-out {
+  background: #e7f7ec;
+  border-color: #3ea765;
+  color: #11652e;
+}
+
+.summary-chip-in {
+  background: #ffe6e6;
+  border-color: #c84242;
+  color: #8d1515;
+}
+
+.summary-chip-paired {
+  background: #fff5de;
+  border-color: #dfad38;
+  color: #8d5e00;
+}
+
+.event-status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.event-status-out {
+  background: #e7f7ec;
+  border-color: #3ea765;
+  color: #11652e;
+}
+
+.event-status-in {
+  background: #ffe6e6;
+  border-color: #c84242;
+  color: #8d1515;
+}
+
+.event-status-cont {
+  background: #fff5de;
+  border-color: #dfad38;
+  color: #8d5e00;
+}
+
+.event-status-unknown {
+  background: #f0f2f8;
+  border-color: #c9d0e2;
+  color: #33415f;
+}
+
 .marker-status {
   display: inline-block;
   padding: 0.45rem 0.7rem;

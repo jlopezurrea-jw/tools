@@ -9,6 +9,7 @@ const stopBtn = document.getElementById("stop-monitoring");
 
 const summaryList = document.getElementById("summary-list");
 const diagnosticsList = document.getElementById("diagnostics-list");
+const eventSummaryBarEl = document.getElementById("event-summary-bar");
 const eventsBody = document.getElementById("events-body");
 const breaksBody = document.getElementById("breaks-body");
 const timelineEl = document.getElementById("timeline");
@@ -69,6 +70,17 @@ function formatTime(value) {
     return "-";
   }
   return Number(value).toFixed(3);
+}
+
+function formatUtcWallClock(isoString) {
+  if (!isoString) {
+    return "-";
+  }
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toISOString().slice(11, 19);
 }
 
 function toIsoNow() {
@@ -189,6 +201,131 @@ function describeJwEvent(eventType, payload) {
   }
 
   return compactDetails(safeJsonStringify(stripVolatileFields(payload), 180), 180);
+}
+
+function parseInlineAttributesFromText(text) {
+  const attrs = {};
+  if (!text) {
+    return attrs;
+  }
+
+  const normalized = String(text).replace(/^#?EXT-[^:]+:/, "");
+  const regex = /([A-Za-z0-9-]+)=("[^"]*"|[^,\s]+)/g;
+  let match = regex.exec(normalized);
+  while (match) {
+    const key = match[1].toUpperCase();
+    const value = match[2].replace(/^"|"$/g, "");
+    attrs[key] = value;
+    match = regex.exec(normalized);
+  }
+
+  return attrs;
+}
+
+function deriveSignalTypeFromRaw(rawDetails) {
+  const tokens = [];
+  collectPayloadText(rawDetails, tokens);
+  const normalized = tokens.join(" ").toUpperCase();
+
+  if (normalized.includes("CUE-OUT-CONT")) {
+    return "CUE-OUT-CONT";
+  }
+  if (normalized.includes("CUE-OUT")) {
+    return "CUE-OUT";
+  }
+  if (normalized.includes("CUE-IN")) {
+    return "CUE-IN";
+  }
+  if (normalized.includes("SCTE35-OUT") || normalized.includes(" OUT=0X")) {
+    return "SCTE35-OUT";
+  }
+  if (normalized.includes("SCTE35-IN") || normalized.includes(" IN=0X")) {
+    return "SCTE35-IN";
+  }
+
+  return "Unknown";
+}
+
+function extractScteAttributeSummary(rawDetails) {
+  const attrs = {};
+  const tokens = [];
+  collectPayloadText(rawDetails, tokens);
+
+  tokens.forEach((token) => {
+    const parsed = parseInlineAttributesFromText(token);
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (!attrs[key]) {
+        attrs[key] = value;
+      }
+    });
+  });
+
+  const collectScalarPairs = (value, depth = 0) => {
+    if (!value || typeof value !== "object" || depth > 5) {
+      return;
+    }
+    Object.entries(value).forEach(([key, nested]) => {
+      if (nested === undefined || nested === null) {
+        return;
+      }
+      if (typeof nested === "object") {
+        collectScalarPairs(nested, depth + 1);
+        return;
+      }
+      const up = key.toUpperCase();
+      if (!attrs[up]) {
+        attrs[up] = String(nested);
+      }
+    });
+  };
+
+  if (rawDetails && typeof rawDetails === "object") {
+    collectScalarPairs(rawDetails);
+  }
+
+  const parts = [];
+  const duration = attrs.DURATION || attrs["PLANNED-DURATION"];
+  if (duration) {
+    parts.push(`Duration: ${compactDetails(duration, 24)}s`);
+  }
+
+  const upid = attrs.UPID || attrs["SEGMENTATION-UPID"] || attrs["X-UPID"] || attrs["X-ASSET-ID"];
+  if (upid) {
+    parts.push(`UPID: ${compactDetails(upid, 28)}`);
+  }
+
+  const availNum = attrs["AVAIL-NUM"] || attrs.AVAILNUM || attrs["AVAIL-NUMBER"];
+  const availsExpected = attrs["AVAILS-EXPECTED"] || attrs.AVAILSEXPECTED;
+  if (availNum && availsExpected) {
+    parts.push(`Avail: ${availNum}/${availsExpected}`);
+  } else if (availNum) {
+    parts.push(`Avail: ${availNum}`);
+  }
+
+  const markerId = attrs.ID || attrs.EVENTID;
+  if (markerId) {
+    parts.push(`ID: ${compactDetails(markerId, 24)}`);
+  }
+
+  const sctePayload = attrs["SCTE35-OUT"] || attrs["SCTE35-IN"] || attrs.OUT || attrs.IN;
+  if (sctePayload) {
+    parts.push(`SCTE35: ${compactDetails(sctePayload, 28)}`);
+  }
+
+  return parts.length ? parts.join(", ") : "-";
+}
+
+function getStatusBadgeForSignal(signalType) {
+  if (signalType === "CUE-OUT" || signalType === "SCTE35-OUT") {
+    return { label: "✅ CUE-OUT", className: "event-status-pill event-status-out" };
+  }
+  if (signalType === "CUE-IN" || signalType === "SCTE35-IN") {
+    return { label: "🔴 CUE-IN", className: "event-status-pill event-status-in" };
+  }
+  if (signalType === "CUE-OUT-CONT") {
+    return { label: "⏳ CONT", className: "event-status-pill event-status-cont" };
+  }
+  return { label: "• Unknown", className: "event-status-pill event-status-unknown" };
 }
 
 function parseIsoDuration(iso) {
@@ -861,6 +998,7 @@ function addEventLogEntry({
   offsetSeconds = null,
   programDateTime = null,
   details = "",
+  rawDetails = null,
   uniqueKey,
 }) {
   const now = toIsoNow();
@@ -873,22 +1011,31 @@ function addEventLogEntry({
     existing.lastSeenAt = now;
     existing.seenCount += 1;
     state.eventLogMap.set(key, existing);
+    state.lastScteEventAt = now;
+    state.lastScteEventType = existing.signalType || existing.type;
+    state.lastScteEventSource = existing.source;
     return false;
   }
+
+  const signalType = deriveSignalTypeFromRaw(rawDetails || details || type);
+  const macroSummary = extractScteAttributeSummary(rawDetails || details || "");
 
   state.eventLogMap.set(key, {
     source,
     type,
+    signalType,
+    macroSummary,
     offsetSeconds: round(offsetSeconds),
     programDateTime,
     details,
+    rawDetails,
     firstSeenAt: now,
     lastSeenAt: now,
     seenCount: 1,
   });
 
   state.lastScteEventAt = now;
-  state.lastScteEventType = type;
+  state.lastScteEventType = signalType !== "Unknown" ? signalType : type;
   state.lastScteEventSource = source;
 
   return true;
@@ -903,6 +1050,11 @@ function ingestManifestEvents(markers) {
       offsetSeconds: marker.offsetSeconds,
       programDateTime: marker.programDateTime,
       details: compactDetails(marker.tag, 180),
+      rawDetails: {
+        markerType: marker.type,
+        tag: marker.tag,
+        attributes: marker.details,
+      },
       uniqueKey: `manifest|${marker.signature}`,
     });
     if (added) {
@@ -947,6 +1099,7 @@ function registerJwEvent(eventType, payload) {
     offsetSeconds: position,
     programDateTime: null,
     details: describeJwEvent(eventType, payload),
+    rawDetails: payload,
     uniqueKey: `jw|${eventType}|${stableSignature}`,
   });
   renderEventLog();
@@ -1013,27 +1166,81 @@ function setDiagnostics(data) {
   appendDiagnostics(info, "diag-info", "Info:");
 }
 
+function renderEventSummary(rows) {
+  if (!eventSummaryBarEl) {
+    return;
+  }
+
+  const outCount = rows.filter(
+    (row) => row.signalType === "CUE-OUT" || row.signalType === "SCTE35-OUT",
+  ).length;
+  const inCount = rows.filter(
+    (row) => row.signalType === "CUE-IN" || row.signalType === "SCTE35-IN",
+  ).length;
+
+  const paired = Math.min(outCount, inCount);
+  let pairingText = "Paired: none yet";
+  if (outCount === 0 && inCount === 0) {
+    pairingText = "Paired: no CUE markers yet";
+  } else if (outCount === inCount) {
+    pairingText = `Paired: ${paired} matched`;
+  } else if (outCount > inCount) {
+    pairingText = `Orphaned: ${outCount - inCount} CUE-OUT without CUE-IN`;
+  } else {
+    pairingText = `Orphaned: ${inCount - outCount} CUE-IN without CUE-OUT`;
+  }
+
+  eventSummaryBarEl.innerHTML =
+    `<span class="summary-chip summary-chip-out">CUE-OUT: ${outCount}</span>` +
+    `<span class="summary-chip summary-chip-in">CUE-IN: ${inCount}</span>` +
+    `<span class="summary-chip summary-chip-paired">${pairingText}</span>`;
+}
+
 function renderEventLog() {
   clearChildren(eventsBody);
   const rows = Array.from(state.eventLogMap.values()).sort((a, b) =>
     a.firstSeenAt > b.firstSeenAt ? -1 : 1,
   );
+  renderEventSummary(rows);
 
   rows.forEach((row) => {
     const tr = document.createElement("tr");
+    const status = getStatusBadgeForSignal(row.signalType);
     const cells = [
       row.source,
-      `${row.type}${row.seenCount > 1 ? ` (seen ${row.seenCount}x)` : ""}`,
+      row.signalType || "Unknown",
+      formatUtcWallClock(row.firstSeenAt),
       formatTime(row.offsetSeconds),
-      row.programDateTime || "-",
-      row.details || "-",
+      row.macroSummary || "-",
     ];
 
-    cells.forEach((value) => {
-      const td = document.createElement("td");
-      td.textContent = value;
-      tr.appendChild(td);
-    });
+    const sourceTd = document.createElement("td");
+    sourceTd.textContent = `${cells[0]}${row.seenCount > 1 ? ` (seen ${row.seenCount}x)` : ""}`;
+    tr.appendChild(sourceTd);
+
+    const signalTd = document.createElement("td");
+    signalTd.textContent = cells[1];
+    tr.appendChild(signalTd);
+
+    const statusTd = document.createElement("td");
+    const statusPill = document.createElement("span");
+    statusPill.className = status.className;
+    statusPill.textContent = status.label;
+    statusTd.appendChild(statusPill);
+    tr.appendChild(statusTd);
+
+    const wallClockTd = document.createElement("td");
+    wallClockTd.textContent = cells[2];
+    tr.appendChild(wallClockTd);
+
+    const playbackTd = document.createElement("td");
+    playbackTd.textContent = cells[3];
+    tr.appendChild(playbackTd);
+
+    const macroTd = document.createElement("td");
+    macroTd.textContent = cells[4];
+    tr.appendChild(macroTd);
+
     eventsBody.appendChild(tr);
   });
 }
@@ -1174,6 +1381,9 @@ function resetForNewInput(url) {
   clearChildren(summaryList);
   clearChildren(diagnosticsList);
   clearChildren(timelineEl);
+  if (eventSummaryBarEl) {
+    eventSummaryBarEl.textContent = "No CUE markers detected yet.";
+  }
   adMarkerStatusEl.className = "marker-status marker-status-idle";
   adMarkerStatusEl.textContent = "No data yet";
   adMarkerDetailEl.textContent = "Run Analyze Once or Start Monitoring.";
