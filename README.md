@@ -46,9 +46,9 @@ You can choose a proxy in the UI, or use auto fallback mode.
 
 ## JW Player setup
 
-The UI includes a JW Player key input. Enter your key so the app can load:
+The UI includes a JW Player **Player ID** input. Enter your Player ID so the app can load:
 
-- `https://cdn.jwplayer.com/libraries/YOUR_KEY.js`
+- `https://cdn.jwplayer.com/libraries/{PLAYER_ID}.js`
 
 Once loaded, stream playback and JW timed metadata events are captured in the Event Log.
 

@@ -2,7 +2,7 @@ const form = document.getElementById("analyze-form");
 const urlInput = document.getElementById("stream-url");
 const pollInput = document.getElementById("poll-interval");
 const proxyModeInput = document.getElementById("proxy-mode");
-const jwLibraryKeyInput = document.getElementById("jw-library-key");
+const jwPlayerIdInput = document.getElementById("jw-player-id");
 const statusEl = document.getElementById("status");
 
 const startBtn = document.getElementById("start-monitoring");
@@ -25,7 +25,7 @@ const state = {
   pollManifestUrl: null,
   eventLogMap: new Map(),
   jwPlayerInstance: null,
-  jwScriptKeyLoaded: null,
+  jwScriptPlayerIdLoaded: null,
   jwScriptPromise: null,
   jwSessionErrors: [],
 };
@@ -998,20 +998,20 @@ function resetForNewInput(url) {
 }
 
 async function ensureJwLibrary() {
-  const key = jwLibraryKeyInput.value.trim();
-  if (window.jwplayer && (!key || key === "YOUR_KEY")) {
+  const playerId = jwPlayerIdInput.value.trim();
+  if (window.jwplayer && !playerId) {
     return;
   }
 
-  if (!key || key === "YOUR_KEY") {
-    throw new Error("Set your JW Player library key first, or replace YOUR_KEY in index.html.");
+  if (!playerId) {
+    throw new Error("Set your JW Player ID first.");
   }
 
-  if (window.jwplayer && state.jwScriptKeyLoaded === key) {
+  if (window.jwplayer && state.jwScriptPlayerIdLoaded === playerId) {
     return;
   }
 
-  if (state.jwScriptPromise && state.jwScriptKeyLoaded === key) {
+  if (state.jwScriptPromise && state.jwScriptPlayerIdLoaded === playerId) {
     await state.jwScriptPromise;
     return;
   }
@@ -1024,10 +1024,10 @@ async function ensureJwLibrary() {
   state.jwScriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.id = "jw-library-script";
-    script.src = `https://cdn.jwplayer.com/libraries/${encodeURIComponent(key)}.js`;
+    script.src = `https://cdn.jwplayer.com/libraries/${encodeURIComponent(playerId)}.js`;
     script.async = true;
     script.onload = () => {
-      state.jwScriptKeyLoaded = key;
+      state.jwScriptPlayerIdLoaded = playerId;
       resolve();
     };
     script.onerror = () => {

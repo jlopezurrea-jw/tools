@@ -41,8 +41,9 @@
               </select>
             </div>
             <div class="controls-row">
-              <label for="jw-library-key">JW Player Library Key</label>
-              <input id="jw-library-key" type="text" value="YOUR_KEY" />
+              <label for="jw-player-id">JW Player ID</label>
+              <input id="jw-player-id" type="text" placeholder="YOUR_PLAYER_ID" />
+              <p class="helper-text">Find your Player ID in the JW Player dashboard under Players</p>
             </div>
           </div>
 
@@ -75,8 +76,8 @@
         <h2>JW Player</h2>
         <div id="jw-player" class="jw-player-box"></div>
         <p class="helper-text">
-          JW library URL template: <code>https://cdn.jwplayer.com/libraries/YOUR_KEY.js</code>
-          (replace <code>YOUR_KEY</code> with your actual JW Player key).
+          Library URL is generated dynamically as
+          <code>https://cdn.jwplayer.com/libraries/{PLAYER_ID}.js</code>.
         </p>
       </section>
 
@@ -114,7 +115,6 @@
       </section>
     </main>
 
-    <script src="https://cdn.jwplayer.com/libraries/YOUR_KEY.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
