@@ -143,7 +143,7 @@ function hasScteSignal(value) {
   const tokens = [];
   collectPayloadText(value, tokens);
   const normalized = tokens.join(" ").toLowerCase();
-  return /(scte|scte35|cue-?out|cue-?in|splice|segmentation|time_signal|adbreak|daterange)/.test(
+  return /(scte|scte35|cue-?out|cue-?in|splice|segmentation|time_signal|adbreak|date-?range)/.test(
     normalized,
   );
 }
@@ -239,12 +239,30 @@ function parseInlineAttributesFromText(text) {
   return attrs;
 }
 
+function normalizeJwEventObject(eventType, payload) {
+  const wrappedPayload =
+    payload && typeof payload === "object" && payload.payload && typeof payload.payload === "object"
+      ? payload.payload
+      : payload;
+
+  return {
+    wrappedPayload,
+    combinedPayload: {
+      eventType,
+      payload,
+      wrappedPayload,
+    },
+  };
+}
+
 function deriveSignalTypeFromRaw(rawDetails) {
   const knownPayloadCandidates = [];
   if (rawDetails && typeof rawDetails === "object") {
     const metadata = rawDetails.metadata || rawDetails.meta || {};
     const cue = rawDetails.cue || {};
     const timedMetadata = rawDetails.timedMetadata || {};
+    const wrappedPayload = rawDetails.wrappedPayload || rawDetails.payload || {};
+    const payloadMetadata = wrappedPayload.metadata || {};
     knownPayloadCandidates.push(
       rawDetails.content,
       rawDetails.tag,
@@ -264,6 +282,12 @@ function deriveSignalTypeFromRaw(rawDetails) {
       timedMetadata.tag,
       timedMetadata.content,
       timedMetadata.data,
+      wrappedPayload.metadataType,
+      wrappedPayload.type,
+      wrappedPayload.content,
+      wrappedPayload.tag,
+      wrappedPayload.data,
+      payloadMetadata,
     );
   }
 
@@ -273,6 +297,14 @@ function deriveSignalTypeFromRaw(rawDetails) {
   const normalized = tokens.join(" ").toUpperCase();
   const attrData = extractScteAttributeData(rawDetails || "");
   const attrs = attrData.attrs || {};
+  const metadataType = String(
+    attrs.METADATATYPE ||
+      attrs.TYPE ||
+      rawDetails?.metadataType ||
+      rawDetails?.wrappedPayload?.metadataType ||
+      rawDetails?.payload?.metadataType ||
+      "",
+  ).toUpperCase();
 
   if (normalized.includes("ADBREAKSTART")) {
     return "CUE-OUT";
@@ -295,10 +327,24 @@ function deriveSignalTypeFromRaw(rawDetails) {
   if (normalized.includes("SCTE35-IN") || normalized.includes(" IN=0X")) {
     return "SCTE35-IN";
   }
-  if (attrs["SCTE35-OUT"] || attrs.OUT || attrs["CUE-OUT"]) {
+  if (metadataType === "DATE-RANGE") {
+    if (attrs["SCTE35-IN"] || attrs["X-SCTE35-IN"] || attrs["CUE-IN"]) {
+      return "CUE-IN";
+    }
+    if (
+      attrs["SCTE35-OUT"] ||
+      attrs["X-SCTE35-OUT"] ||
+      attrs["CUE-OUT"] ||
+      attrs.DURATION ||
+      attrs["PLANNED-DURATION"]
+    ) {
+      return "CUE-OUT";
+    }
+  }
+  if (attrs["SCTE35-OUT"] || attrs["X-SCTE35-OUT"] || attrs.OUT || attrs["CUE-OUT"]) {
     return "SCTE35-OUT";
   }
-  if (attrs["SCTE35-IN"] || attrs.IN || attrs["CUE-IN"]) {
+  if (attrs["SCTE35-IN"] || attrs["X-SCTE35-IN"] || attrs.IN || attrs["CUE-IN"]) {
     return "SCTE35-IN";
   }
   if (
@@ -1392,10 +1438,18 @@ function extractJwEventTiming(payload) {
   };
 
   const positionPaths = [
+    "wrappedPayload.metadataTime",
+    "payload.metadataTime",
+    "metadataTime",
     "start",
     "offset",
     "begin",
-    "metadataTime",
+    "wrappedPayload.start",
+    "wrappedPayload.offset",
+    "wrappedPayload.begin",
+    "payload.start",
+    "payload.offset",
+    "payload.begin",
     "event.start",
     "event.offset",
     "event.begin",
@@ -1421,6 +1475,8 @@ function extractJwEventTiming(payload) {
   }
 
   const programDatePaths = [
+    "wrappedPayload.programDateTime",
+    "payload.programDateTime",
     "programDateTime",
     "event.programDateTime",
     "metadata.programDateTime",
@@ -1445,20 +1501,26 @@ function extractJwEventTiming(payload) {
 }
 
 function registerJwEvent(eventType, payload) {
-  console.debug("[SCTE Debug] Raw JW event", eventType, payload);
+  const normalizedJwEvent = normalizeJwEventObject(eventType, payload);
+  const rawJwEventObject = {
+    eventType,
+    payload: normalizedJwEvent.wrappedPayload,
+  };
+  console.debug("[SCTE Debug] Raw JW event", rawJwEventObject);
 
   const isAdBreakEvent = eventType === "adBreakStart" || eventType === "adBreakEnd";
   const isTimedMetadataEvent = eventType === "meta" || eventType === "metadataCueParsed";
-  const derivedSignalFromPayload = deriveSignalTypeFromRaw({
-    ...(payload && typeof payload === "object" ? payload : {}),
-    eventType,
-  });
+  const derivedSignalFromPayload = deriveSignalTypeFromRaw(normalizedJwEvent.combinedPayload);
 
   if (!isAdBreakEvent && !isTimedMetadataEvent) {
     return;
   }
 
-  if (isTimedMetadataEvent && !hasScteSignal(payload) && derivedSignalFromPayload === "Unknown") {
+  if (
+    isTimedMetadataEvent &&
+    !hasScteSignal(normalizedJwEvent.combinedPayload) &&
+    derivedSignalFromPayload === "Unknown"
+  ) {
     return;
   }
 
@@ -1468,20 +1530,20 @@ function registerJwEvent(eventType, payload) {
     state.jwAdBreakActive = false;
   }
 
-  const timing = extractJwEventTiming(payload);
+  const timing = extractJwEventTiming(normalizedJwEvent.combinedPayload);
   const position = timing.playbackPosition;
   const programDateTime = timing.programDateTime;
   if (derivedSignalFromPayload === "Unknown") {
-    console.warn("[SCTE Debug] Unknown signal payload", { eventType, payload });
+    console.warn("[SCTE Debug] Unknown signal payload", rawJwEventObject);
   }
-  const stableSignature = buildStableJwPayloadSignature(payload);
+  const stableSignature = buildStableJwPayloadSignature(normalizedJwEvent.combinedPayload);
   addEventLogEntry({
     source: "[JW Event]",
     type: eventType,
     offsetSeconds: position,
     programDateTime,
-    details: describeJwEvent(eventType, payload),
-    rawDetails: payload,
+    details: describeJwEvent(eventType, normalizedJwEvent.wrappedPayload),
+    rawDetails: normalizedJwEvent.combinedPayload,
     uniqueKey: `jw|${eventType}|${stableSignature}`,
   });
   renderEventLog();
