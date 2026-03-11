@@ -1,13 +1,11 @@
 const sharedSiteIdInput = document.getElementById("shared-site-id");
 const sharedApiSecretInput = document.getElementById("shared-api-secret");
-const sharedPlayerIdInput = document.getElementById("shared-player-id");
 
 const JW_API_BASE = "https://api.jwplayer.com";
 const TITLE_LIMIT = 5000;
 const DESCRIPTION_LIMIT = 25000;
 const CUSTOM_PARAM_VALUE_LIMIT = 7500;
 const MAX_BULK_ITEMS = 300;
-let loadedPlayerLibraryId = null;
 
 const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
@@ -47,53 +45,10 @@ const seriesMapStatusLine = document.getElementById("series-map-status-line");
 const seriesMapResponseBox = document.getElementById("series-map-response-box");
 
 setupTabs();
-setupPlayerLibraryLoader();
 setupSingleUpdateForm();
 setupBulkLinesForm();
 setupBulkCsvForm();
 setupSeriesTools();
-
-function setupPlayerLibraryLoader() {
-  if (!(sharedPlayerIdInput instanceof HTMLInputElement)) {
-    return;
-  }
-
-  const loadFromInput = () => {
-    const playerId = sharedPlayerIdInput.value.trim();
-    if (!playerId) {
-      return;
-    }
-    injectPlayerLibrary(playerId);
-  };
-
-  sharedPlayerIdInput.addEventListener("change", loadFromInput);
-  sharedPlayerIdInput.addEventListener("blur", loadFromInput);
-}
-
-function injectPlayerLibrary(playerId) {
-  if (!isNonEmptyString(playerId)) {
-    return;
-  }
-
-  const normalizedPlayerId = playerId.trim();
-  if (loadedPlayerLibraryId === normalizedPlayerId) {
-    return;
-  }
-
-  const existingTag = document.querySelector("script[data-jw-player-library='true']");
-  if (existingTag instanceof HTMLScriptElement) {
-    existingTag.remove();
-  }
-
-  const scriptTag = document.createElement("script");
-  scriptTag.async = true;
-  scriptTag.dataset.jwPlayerLibrary = "true";
-  scriptTag.src = `https://cdn.jwplayer.com/libraries/${encodeURIComponent(
-    normalizedPlayerId
-  )}.js`;
-  document.head.appendChild(scriptTag);
-  loadedPlayerLibraryId = normalizedPlayerId;
-}
 
 function setupTabs() {
   tabButtons.forEach((button) => {
@@ -468,13 +423,6 @@ function collectSeasonMappings() {
 }
 
 function getConnectionSettings() {
-  if (sharedPlayerIdInput instanceof HTMLInputElement) {
-    const playerId = sharedPlayerIdInput.value.trim();
-    if (playerId) {
-      injectPlayerLibrary(playerId);
-    }
-  }
-
   const siteId = sharedSiteIdInput.value.trim();
   const apiSecret = sharedApiSecretInput.value.trim();
 

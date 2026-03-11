@@ -11,8 +11,6 @@ This project is now **fully static**:
 - No `/api/*` proxy routes
 - Frontend calls `https://api.jwplayer.com` directly with `fetch`
 - `siteId` and `apiSecret` are entered in the UI and used per request
-- Player library script is loaded from `Player ID` using:
-  `https://cdn.jwplayer.com/libraries/{PLAYER_ID}.js`
 
 ## Features
 
@@ -27,10 +25,6 @@ The UI has four tabs:
 4. **Series setup**
    - Create placeholder series
    - Map seasons and episodes to a series
-
-Connection settings also include:
-
-- **Player ID** (optional): dynamically injects JW Player library script
 
 ## Metadata merge behavior
 
