@@ -271,6 +271,8 @@ function deriveSignalTypeFromRaw(rawDetails) {
   collectPayloadText(rawDetails, tokens);
   knownPayloadCandidates.forEach((item) => collectPayloadText(item, tokens));
   const normalized = tokens.join(" ").toUpperCase();
+  const attrData = extractScteAttributeData(rawDetails || "");
+  const attrs = attrData.attrs || {};
 
   if (normalized.includes("ADBREAKSTART")) {
     return "CUE-OUT";
@@ -292,6 +294,27 @@ function deriveSignalTypeFromRaw(rawDetails) {
   }
   if (normalized.includes("SCTE35-IN") || normalized.includes(" IN=0X")) {
     return "SCTE35-IN";
+  }
+  if (attrs["SCTE35-OUT"] || attrs.OUT || attrs["CUE-OUT"]) {
+    return "SCTE35-OUT";
+  }
+  if (attrs["SCTE35-IN"] || attrs.IN || attrs["CUE-IN"]) {
+    return "SCTE35-IN";
+  }
+  if (
+    normalized.includes("DATE-RANGE") &&
+    (normalized.includes("SCTE35-OUT") || normalized.includes(" OUT=0X"))
+  ) {
+    return "SCTE35-OUT";
+  }
+  if (
+    normalized.includes("DATE-RANGE") &&
+    (normalized.includes("SCTE35-IN") || normalized.includes(" IN=0X"))
+  ) {
+    return "SCTE35-IN";
+  }
+  if (normalized.includes("SPLICE_INSERT") || normalized.includes("TIME_SIGNAL")) {
+    return "SCTE35-OUT";
   }
 
   return "Unknown";
@@ -1331,6 +1354,96 @@ function getJwPosition(player) {
   }
 }
 
+function getValueByPath(source, path) {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+  const parts = path.split(".");
+  let current = source;
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || !(part in current)) {
+      return undefined;
+    }
+    current = current[part];
+  }
+  return current;
+}
+
+function parseIsoOrNumericTime(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function extractJwEventTiming(payload) {
+  const result = {
+    playbackPosition: null,
+    programDateTime: null,
+  };
+
+  const positionPaths = [
+    "start",
+    "offset",
+    "begin",
+    "metadataTime",
+    "event.start",
+    "event.offset",
+    "event.begin",
+    "event.metadataTime",
+    "cue.start",
+    "cue.offset",
+    "cue.begin",
+    "metadata.start",
+    "metadata.offset",
+    "metadata.begin",
+    "timedMetadata.start",
+    "timedMetadata.offset",
+    "timedMetadata.begin",
+  ];
+
+  for (const path of positionPaths) {
+    const value = getValueByPath(payload, path);
+    const parsed = parseIsoOrNumericTime(value);
+    if (Number.isFinite(parsed)) {
+      result.playbackPosition = parsed;
+      break;
+    }
+  }
+
+  const programDatePaths = [
+    "programDateTime",
+    "event.programDateTime",
+    "metadata.programDateTime",
+    "cue.programDateTime",
+    "timedMetadata.programDateTime",
+    "dateTime",
+    "event.dateTime",
+  ];
+
+  for (const path of programDatePaths) {
+    const value = getValueByPath(payload, path);
+    if (!value) {
+      continue;
+    }
+    if (typeof value === "string" && Number.isFinite(Date.parse(value))) {
+      result.programDateTime = new Date(value).toISOString();
+      break;
+    }
+  }
+
+  return result;
+}
+
 function registerJwEvent(eventType, payload) {
   console.debug("[SCTE Debug] Raw JW event", eventType, payload);
 
@@ -1355,13 +1468,18 @@ function registerJwEvent(eventType, payload) {
     state.jwAdBreakActive = false;
   }
 
-  const position = getJwPosition(state.jwPlayerInstance);
+  const timing = extractJwEventTiming(payload);
+  const position = timing.playbackPosition;
+  const programDateTime = timing.programDateTime;
+  if (derivedSignalFromPayload === "Unknown") {
+    console.warn("[SCTE Debug] Unknown signal payload", { eventType, payload });
+  }
   const stableSignature = buildStableJwPayloadSignature(payload);
   addEventLogEntry({
     source: "[JW Event]",
     type: eventType,
     offsetSeconds: position,
-    programDateTime: null,
+    programDateTime,
     details: describeJwEvent(eventType, payload),
     rawDetails: payload,
     uniqueKey: `jw|${eventType}|${stableSignature}`,
