@@ -244,7 +244,7 @@ button[disabled] {
 
 .timeline {
   position: relative;
-  min-height: 74px;
+  min-height: 120px;
   border: 1px solid #ccd6ea;
   border-radius: 6px;
   background: linear-gradient(to right, #eef3fe 0%, #f8f9fd 100%);
@@ -255,13 +255,13 @@ button[disabled] {
   position: absolute;
   left: 0;
   right: 0;
-  top: 32px;
+  top: 36px;
   border-top: 2px solid #60739b;
 }
 
 .timeline-break {
   position: absolute;
-  top: 24px;
+  top: 27px;
   height: 18px;
   background: rgba(204, 65, 65, 0.65);
   border: 1px solid #a83232;
@@ -270,18 +270,53 @@ button[disabled] {
 
 .timeline-marker {
   position: absolute;
-  top: 14px;
+  top: 12px;
   width: 2px;
-  height: 34px;
-  background: #1d3f91;
+  height: 40px;
+}
+
+.timeline-marker-out {
+  background: #1e9140;
+}
+
+.timeline-marker-in {
+  background: #be2f2f;
 }
 
 .timeline-label {
   position: absolute;
-  top: 49px;
+  top: 54px;
   transform: translateX(-50%);
   font-size: 0.7rem;
   color: #1d3f91;
+  white-space: nowrap;
+}
+
+.timeline-duration-label {
+  position: absolute;
+  top: 29px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  color: #6d1313;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 36px;
+  width: 1px;
+  height: 52px;
+  background: #9ba8c6;
+}
+
+.timeline-tick-label {
+  position: absolute;
+  top: 90px;
+  transform: translateX(-50%);
+  font-size: 0.68rem;
+  color: #41567f;
   white-space: nowrap;
 }
 

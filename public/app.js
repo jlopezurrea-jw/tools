@@ -12,6 +12,7 @@ const diagnosticsList = document.getElementById("diagnostics-list");
 const eventSummaryBarEl = document.getElementById("event-summary-bar");
 const eventsBody = document.getElementById("events-body");
 const breaksBody = document.getElementById("breaks-body");
+const timelinePanelEl = document.getElementById("timeline-panel");
 const timelineEl = document.getElementById("timeline");
 const adMarkerStatusEl = document.getElementById("ad-marker-status");
 const adMarkerDetailEl = document.getElementById("ad-marker-detail");
@@ -246,7 +247,22 @@ function deriveSignalTypeFromRaw(rawDetails) {
   return "Unknown";
 }
 
-function extractScteAttributeSummary(rawDetails) {
+function parseDurationSeconds(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const match = String(value).match(/-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[0]);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function extractScteAttributeData(rawDetails) {
   const attrs = {};
   const tokens = [];
   collectPayloadText(rawDetails, tokens);
@@ -285,6 +301,7 @@ function extractScteAttributeSummary(rawDetails) {
 
   const parts = [];
   const duration = attrs.DURATION || attrs["PLANNED-DURATION"];
+  const durationSeconds = parseDurationSeconds(duration);
   if (duration) {
     parts.push(`Duration: ${compactDetails(duration, 24)}s`);
   }
@@ -312,7 +329,11 @@ function extractScteAttributeSummary(rawDetails) {
     parts.push(`SCTE35: ${compactDetails(sctePayload, 28)}`);
   }
 
-  return parts.length ? parts.join(", ") : "-";
+  return {
+    attrs,
+    durationSeconds,
+    summary: parts.length ? parts.join(", ") : "-",
+  };
 }
 
 function getStatusBadgeForSignal(signalType) {
@@ -1008,6 +1029,13 @@ function addEventLogEntry({
   const existing = state.eventLogMap.get(key);
 
   if (existing) {
+    const latestAttr = extractScteAttributeData(rawDetails || details || "");
+    if (!existing.durationSeconds && latestAttr.durationSeconds) {
+      existing.durationSeconds = latestAttr.durationSeconds;
+    }
+    if ((!existing.macroSummary || existing.macroSummary === "-") && latestAttr.summary !== "-") {
+      existing.macroSummary = latestAttr.summary;
+    }
     existing.lastSeenAt = now;
     existing.seenCount += 1;
     state.eventLogMap.set(key, existing);
@@ -1018,13 +1046,14 @@ function addEventLogEntry({
   }
 
   const signalType = deriveSignalTypeFromRaw(rawDetails || details || type);
-  const macroSummary = extractScteAttributeSummary(rawDetails || details || "");
+  const scteAttrData = extractScteAttributeData(rawDetails || details || "");
 
   state.eventLogMap.set(key, {
     source,
     type,
     signalType,
-    macroSummary,
+    macroSummary: scteAttrData.summary,
+    durationSeconds: scteAttrData.durationSeconds,
     offsetSeconds: round(offsetSeconds),
     programDateTime,
     details,
@@ -1171,23 +1200,65 @@ function renderEventSummary(rows) {
     return;
   }
 
-  const outCount = rows.filter(
+  const chronologicalRows = [...rows].sort((a, b) => {
+    const aTs = Date.parse(a.firstSeenAt || "");
+    const bTs = Date.parse(b.firstSeenAt || "");
+    return aTs - bTs;
+  });
+
+  const outCount = chronologicalRows.filter(
     (row) => row.signalType === "CUE-OUT" || row.signalType === "SCTE35-OUT",
   ).length;
-  const inCount = rows.filter(
+  const inCount = chronologicalRows.filter(
     (row) => row.signalType === "CUE-IN" || row.signalType === "SCTE35-IN",
   ).length;
 
-  const paired = Math.min(outCount, inCount);
-  let pairingText = "Paired: none yet";
-  if (outCount === 0 && inCount === 0) {
-    pairingText = "Paired: no CUE markers yet";
-  } else if (outCount === inCount) {
-    pairingText = `Paired: ${paired} matched`;
-  } else if (outCount > inCount) {
-    pairingText = `Orphaned: ${outCount - inCount} CUE-OUT without CUE-IN`;
-  } else {
-    pairingText = `Orphaned: ${inCount - outCount} CUE-IN without CUE-OUT`;
+  const openCueOutQueue = [];
+  let pairedCount = 0;
+  let unmatchedCueInCount = 0;
+
+  chronologicalRows.forEach((row) => {
+    if (row.signalType === "CUE-OUT" || row.signalType === "SCTE35-OUT") {
+      openCueOutQueue.push(row);
+      return;
+    }
+    if (row.signalType === "CUE-IN" || row.signalType === "SCTE35-IN") {
+      if (openCueOutQueue.length > 0) {
+        openCueOutQueue.shift();
+        pairedCount += 1;
+      } else {
+        unmatchedCueInCount += 1;
+      }
+    }
+  });
+
+  let trueOrphanOutCount = 0;
+  const expectedEndTimes = [];
+
+  openCueOutQueue.forEach((outRow) => {
+    if (Number.isFinite(outRow.durationSeconds) && outRow.durationSeconds > 0) {
+      const startMs = Date.parse(outRow.firstSeenAt || "");
+      if (Number.isFinite(startMs)) {
+        const expectedEndIso = new Date(startMs + outRow.durationSeconds * 1000).toISOString();
+        expectedEndTimes.push(formatUtcWallClock(expectedEndIso));
+      }
+    } else {
+      trueOrphanOutCount += 1;
+    }
+  });
+
+  let pairingText = "Paired: no CUE markers yet";
+  if (outCount || inCount) {
+    pairingText = `Paired: ${pairedCount} matched`;
+    if (trueOrphanOutCount > 0) {
+      pairingText += `, Orphaned OUT: ${trueOrphanOutCount}`;
+    }
+    if (unmatchedCueInCount > 0) {
+      pairingText += `, Orphaned IN: ${unmatchedCueInCount}`;
+    }
+    if (expectedEndTimes.length > 0) {
+      pairingText += `, Expected end: ${expectedEndTimes.join(", ")}`;
+    }
   }
 
   eventSummaryBarEl.innerHTML =
@@ -1266,59 +1337,192 @@ function setAdBreaks(data) {
   });
 }
 
-function getTimelineWindow(data) {
-  if (Number.isFinite(data.playlistWindowSeconds) && data.playlistWindowSeconds > 0) {
-    return data.playlistWindowSeconds;
-  }
+function getCueOutDurationFromMarkers(markers, offsetSeconds) {
+  const toleranceSeconds = 0.2;
+  let bestDuration = null;
 
-  const markerMax = (data.markers || []).reduce((max, marker) => {
-    return Math.max(max, Number(marker.offsetSeconds || 0));
-  }, 0);
-  const breakMax = (data.adBreaks || []).reduce((max, adBreak) => {
-    const end = Number(adBreak.endOffsetSeconds || adBreak.startOffsetSeconds || 0);
-    return Math.max(max, end);
-  }, 0);
+  (markers || []).forEach((marker) => {
+    const markerOffset = Number(marker.offsetSeconds);
+    if (!Number.isFinite(markerOffset)) {
+      return;
+    }
 
-  return Math.max(markerMax, breakMax, 60);
+    const distance = Math.abs(markerOffset - offsetSeconds);
+    if (distance > toleranceSeconds) {
+      return;
+    }
+
+    const isCueOutSignal =
+      marker.type === "cue-out" ||
+      (marker.type === "daterange" &&
+        marker.details &&
+        (marker.details["SCTE35-OUT"] || marker.details["SCTE35-CMD"]));
+
+    if (!isCueOutSignal) {
+      return;
+    }
+
+    const duration = Number(marker.durationSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return;
+    }
+
+    if (bestDuration === null || distance < bestDuration.distance) {
+      bestDuration = { value: duration, distance };
+    }
+  });
+
+  return bestDuration ? bestDuration.value : null;
+}
+
+function buildRenderableTimelineBreaks(data) {
+  const renderable = [];
+  (data.adBreaks || []).forEach((adBreak) => {
+    const start = Number(adBreak.startOffsetSeconds);
+    if (!Number.isFinite(start)) {
+      return;
+    }
+
+    const hasExplicitEnd = Number.isFinite(Number(adBreak.endOffsetSeconds));
+    let end = hasExplicitEnd ? Number(adBreak.endOffsetSeconds) : null;
+    let duration = Number(adBreak.durationSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      duration = null;
+    }
+
+    if (!duration) {
+      duration = getCueOutDurationFromMarkers(data.markers || [], start);
+    }
+
+    if (!Number.isFinite(end) && duration) {
+      end = start + duration;
+    }
+
+    if (Number.isFinite(end) && !duration) {
+      duration = end - start;
+    }
+
+    if (!Number.isFinite(end) || !Number.isFinite(duration) || duration <= 0 || end <= start) {
+      return;
+    }
+
+    renderable.push({
+      start,
+      end,
+      duration,
+      cueInPresent: hasExplicitEnd,
+    });
+  });
+
+  return renderable.sort((a, b) => a.start - b.start);
+}
+
+function buildTimelineMarkers(data) {
+  const markers = [];
+  (data.markers || []).forEach((marker) => {
+    const offset = Number(marker.offsetSeconds);
+    if (!Number.isFinite(offset)) {
+      return;
+    }
+
+    if (marker.type === "cue-out") {
+      markers.push({ offset, kind: "out" });
+      return;
+    }
+    if (marker.type === "cue-in") {
+      markers.push({ offset, kind: "in" });
+      return;
+    }
+    if (marker.type === "daterange" && marker.details) {
+      if (marker.details["SCTE35-OUT"]) {
+        markers.push({ offset, kind: "out" });
+      }
+      if (marker.details["SCTE35-IN"]) {
+        markers.push({ offset, kind: "in" });
+      }
+    }
+  });
+  return markers;
+}
+
+function getTimelineWindow(data, renderableBreaks, markerLines) {
+  const configuredWindow =
+    Number.isFinite(data.playlistWindowSeconds) && data.playlistWindowSeconds > 0
+      ? data.playlistWindowSeconds
+      : 0;
+  const breakMax = renderableBreaks.reduce((max, item) => Math.max(max, item.end), 0);
+  const markerMax = markerLines.reduce((max, item) => Math.max(max, item.offset), 0);
+  return Math.max(configuredWindow, breakMax, markerMax, 60);
 }
 
 function setTimeline(data) {
   clearChildren(timelineEl);
-  const windowSeconds = getTimelineWindow(data);
+
+  const renderableBreaks = buildRenderableTimelineBreaks(data);
+  if (!renderableBreaks.length) {
+    if (timelinePanelEl) {
+      timelinePanelEl.hidden = true;
+    }
+    return;
+  }
+
+  if (timelinePanelEl) {
+    timelinePanelEl.hidden = false;
+  }
+
+  const markerLines = buildTimelineMarkers(data);
+  const windowSeconds = getTimelineWindow(data, renderableBreaks, markerLines);
 
   const base = document.createElement("div");
   base.className = "timeline-base";
   timelineEl.appendChild(base);
 
-  (data.adBreaks || []).forEach((adBreak) => {
-    const start = Number(adBreak.startOffsetSeconds || 0);
-    const end = Number(adBreak.endOffsetSeconds || windowSeconds);
+  const tickCount = 6;
+  for (let i = 0; i <= tickCount; i += 1) {
+    const offsetSeconds = (windowSeconds * i) / tickCount;
+    const leftPct = (offsetSeconds / windowSeconds) * 100;
+    const tick = document.createElement("div");
+    tick.className = "timeline-tick";
+    tick.style.left = `${leftPct}%`;
+    timelineEl.appendChild(tick);
+
+    const label = document.createElement("div");
+    label.className = "timeline-tick-label";
+    label.style.left = `${leftPct}%`;
+    label.textContent = `${Math.round(offsetSeconds)}s`;
+    timelineEl.appendChild(label);
+  }
+
+  renderableBreaks.forEach((adBreak) => {
+    const start = adBreak.start;
+    const end = adBreak.end;
     const leftPct = (start / windowSeconds) * 100;
-    const widthPct = Math.max(((end - start) / windowSeconds) * 100, 0.5);
+    const widthPct = Math.max(((end - start) / windowSeconds) * 100, 0.8);
 
     const div = document.createElement("div");
     div.className = "timeline-break";
     div.style.left = `${leftPct}%`;
     div.style.width = `${widthPct}%`;
     div.title = `Ad break ${formatTime(start)}s - ${formatTime(end)}s`;
+
+    const durationLabel = document.createElement("div");
+    durationLabel.className = "timeline-duration-label";
+    durationLabel.textContent = `${formatTime(adBreak.duration)}s`;
+    div.appendChild(durationLabel);
     timelineEl.appendChild(div);
   });
 
-  (data.markers || []).forEach((marker) => {
-    const offset = Number(marker.offsetSeconds || 0);
+  markerLines.forEach((markerItem) => {
+    const offset = Number(markerItem.offset || 0);
     const leftPct = (offset / windowSeconds) * 100;
 
-    const markerLine = document.createElement("div");
-    markerLine.className = "timeline-marker";
-    markerLine.style.left = `${leftPct}%`;
-    markerLine.title = `${marker.type} @ ${formatTime(offset)}s`;
-    timelineEl.appendChild(markerLine);
-
-    const label = document.createElement("div");
-    label.className = "timeline-label";
-    label.style.left = `${leftPct}%`;
-    label.textContent = marker.type;
-    timelineEl.appendChild(label);
+    const markerLineEl = document.createElement("div");
+    markerLineEl.className = `timeline-marker ${
+      markerItem.kind === "out" ? "timeline-marker-out" : "timeline-marker-in"
+    }`;
+    markerLineEl.style.left = `${leftPct}%`;
+    markerLineEl.title = `${markerItem.kind === "out" ? "CUE-OUT" : "CUE-IN"} @ ${formatTime(offset)}s`;
+    timelineEl.appendChild(markerLineEl);
   });
 }
 
@@ -1381,6 +1585,9 @@ function resetForNewInput(url) {
   clearChildren(summaryList);
   clearChildren(diagnosticsList);
   clearChildren(timelineEl);
+  if (timelinePanelEl) {
+    timelinePanelEl.hidden = true;
+  }
   if (eventSummaryBarEl) {
     eventSummaryBarEl.textContent = "No CUE markers detected yet.";
   }
